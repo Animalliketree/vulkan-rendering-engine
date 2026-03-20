@@ -20,7 +20,7 @@ public:
   App() {
     SDL_SetAppMetadata("Game Engine", "0.0.1", "");
     SDL_Init(SDL_INIT_VIDEO);
-    window_ = SDL_CreateWindow("Game Engien", 600, 400, SDL_WINDOW_VULKAN);
+    window_ = SDL_CreateWindow("Game Engine", 600, 400, SDL_WINDOW_VULKAN);
 
     createInstance();
     vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
