@@ -23,12 +23,14 @@ public:
     window_ = SDL_CreateWindow("Game Engien", 600, 400, SDL_WINDOW_VULKAN);
 
     createInstance();
+    vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
 
     selectPhysicalDevice();
 
     createDeviceAndQueues();
   }
   ~App() {
+    vkDestroyDevice(device_, NULL);
     vkDestroyInstance(instance_, NULL);
     SDL_DestroyWindow(window_);
     SDL_Quit();
@@ -41,6 +43,9 @@ private:
   VkDevice device_;
   uint32_t graphics_qf_idx_;
   VkQueue graphics_queue_;
+
+  // Vulkan functions to load
+  PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
 
   bool createInstance() {
     uint32_t num_instance_extensions;
@@ -55,7 +60,8 @@ private:
     int num_extensions = num_instance_extensions + 1;
     const char** extensions = (const char**)(SDL_malloc(num_extensions * sizeof(const char*)));
     extensions[0] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
-    SDL_memcpy(&extensions[1], instance_extensions, num_instance_extensions * sizeof(const char*));
+    extensions[1] = "VK_LAYER_KHRONOS_validation";
+    SDL_memcpy(&extensions[2], instance_extensions, num_instance_extensions * sizeof(const char*));
 
     VkInstanceCreateInfo instance_create_info = {};
     instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
