@@ -9,9 +9,9 @@
 int main() {
     quill::Logger* logger = quill::simple_logger();
 
-    App app(logger);
-
     try {
+        App app(logger);
+
         app.mainLoop();
     } catch (const std::exception& e) {
         quill::error(logger, e.what());
