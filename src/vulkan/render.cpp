@@ -43,7 +43,7 @@ App::App(quill::Logger* logger) : logger_(logger) {
 
   selectPhysicalDevice();
 
-  createDeviceAndQueues();
+  createLogicalDevice();
 }
 
 App::~App() {
@@ -72,8 +72,7 @@ bool App::createWindow() {
 /*
 Initialise the Vulkan instance
 */
-
-bool App::checkValidationLayers(char const* const* p_layers, uint32_t num_layers) {
+bool App::checkValidationLayers(const char* const* p_layers, uint32_t num_layers) {
   uint32_t num_layer_props;
   vkEnumerateInstanceLayerProperties(&num_layer_props, NULL);
   std::vector<VkLayerProperties> layer_props(num_layer_props);
@@ -83,7 +82,7 @@ bool App::checkValidationLayers(char const* const* p_layers, uint32_t num_layers
   for (uint32_t i = 0; i < num_layers; i++) {
     bool layer_available = false;
     for (VkLayerProperties layer : layer_props) {
-      if (SDL_strcmp(p_layers[i], layer.layerName)) {
+      if (SDL_strcmp(p_layers[i], layer.layerName) == 0) {
         layer_available = true;
         break;
       }
@@ -152,25 +151,84 @@ bool App::createInstance() {
 }
 
 bool App::selectPhysicalDevice() {
+  std::vector<const char*> required_device_extensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+  };
+
   quill::info(logger_, "Selecting physical device...");
 
   uint32_t num_devices;
   vkEnumeratePhysicalDevices(instance_, &num_devices, NULL);
+  if (num_devices == 0) {
+    throw std::runtime_error("No physical devices with Vulkan support available");
+  }
   std::vector<VkPhysicalDevice> devices(num_devices);
   vkEnumeratePhysicalDevices(instance_, &num_devices, devices.data());
 
   for (uint32_t i = 0; i < devices.size(); i++) {
     VkPhysicalDeviceProperties device_props;
     vkGetPhysicalDeviceProperties(devices[i], &device_props);
+    if (device_props.apiVersion < VK_API_VERSION_1_4) continue;
     if (device_props.deviceType & (VK_PHYSICAL_DEVICE_TYPE_CPU | VK_PHYSICAL_DEVICE_TYPE_OTHER)) {
       continue;
     }
+
+    uint32_t num_qf_props;
+    vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &num_qf_props, NULL);
+    std::vector<VkQueueFamilyProperties> qf_props(num_qf_props);
+    vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &num_qf_props, qf_props.data());
+
+    bool supports_graphics = false;
+    for (VkQueueFamilyProperties qf_prop : qf_props) {
+      if ((qf_prop.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+        supports_graphics = true;
+        break;
+      }
+    }
+
+    if (!supports_graphics) continue;
+
+    uint32_t num_extensions;
+    vkEnumerateDeviceExtensionProperties(devices[i], NULL, &num_extensions, NULL);
+    std::vector<VkExtensionProperties> extensions(num_extensions);
+    vkEnumerateDeviceExtensionProperties(devices[i], NULL, &num_extensions, extensions.data());
+
+    bool desired_extensions_available = true;
+    for (const char* desired_extension: required_device_extensions) {
+      bool extension_available = false;
+      for (VkExtensionProperties prop : extensions) {
+        if (strcmp(desired_extension, prop.extensionName) == 0) {
+          extension_available = true;
+          break;
+        }
+      }
+
+      if (!extension_available) {
+        desired_extensions_available = false;
+        break;
+      }
+    }
+
+    if (!desired_extensions_available) continue;
+
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_features;
+    dynamic_state_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+
+    VkPhysicalDeviceVulkan13Features vk_1_3_features;
+    vk_1_3_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vk_1_3_features.pNext = &dynamic_state_features;
+
+    VkPhysicalDeviceFeatures2 features;
+    features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features.pNext = &vk_1_3_features;
+    vkGetPhysicalDeviceFeatures2(devices[i], &features);
+    if (dynamic_state_features.extendedDynamicState == VK_FALSE || vk_1_3_features.dynamicRendering == VK_FALSE) continue;
 
     physical_device_ = devices[i];
     return true;
   }
 
-  return false;
+  throw std::runtime_error("Failed to find a suitable Vulkan physical device");
 }
 
 uint32_t App::chooseQueueFamily() {
@@ -189,7 +247,7 @@ uint32_t App::chooseQueueFamily() {
   return UINT32_MAX;
 }
 
-bool App::createDeviceAndQueues() {
+bool App::createLogicalDevice() {
   quill::info(logger_, "Creating logical device and queues...");
 
   graphics_qf_idx_ = chooseQueueFamily();
