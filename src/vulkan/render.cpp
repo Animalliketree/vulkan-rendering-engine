@@ -24,6 +24,10 @@ const std::vector<char const*> kValidationLayers = {
   "VK_LAYER_KHRONOS_validation"
 };
 
+const std::vector<const char*> required_device_extensions = {
+  VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
 #ifdef NDEBUG
 constexpr bool kEnableValidationLayers = false;
 #else
@@ -151,10 +155,6 @@ bool App::createInstance() {
 }
 
 bool App::selectPhysicalDevice() {
-  std::vector<const char*> required_device_extensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
-  };
-
   quill::info(logger_, "Selecting physical device...");
 
   uint32_t num_devices;
@@ -266,6 +266,8 @@ bool App::createLogicalDevice() {
   device_create_info.flags = 0;
   device_create_info.queueCreateInfoCount = 1;
   device_create_info.pQueueCreateInfos = &queue_create_info;
+  device_create_info.enabledExtensionCount = required_device_extensions.size();
+  device_create_info.ppEnabledExtensionNames = required_device_extensions.data();
 
   VkResult result = vkCreateDevice(physical_device_, &device_create_info, NULL, &device_);
   if (result != VK_SUCCESS) {
