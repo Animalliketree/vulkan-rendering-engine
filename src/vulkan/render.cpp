@@ -3,6 +3,7 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include <cstddef>
 #include <cstdint>
@@ -17,6 +18,16 @@
 
 #ifndef VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 #define VK_EXT_DEBUG_REPORT_EXTENSION_NAME "VK_EXT_debug_report"
+#endif
+
+const std::vector<char const*> kValidationLayers = {
+  "VK_LAYER_KHRONOS_validation"
+};
+
+#ifdef NDEBUG
+constexpr bool kEnableValidationLayers = false;
+#else
+constexpr bool kEnableValidationLayers = true;
 #endif
 
 #define APP_TITLE "Game"
@@ -61,11 +72,43 @@ bool App::createWindow() {
 bool App::createInstance() {
   quill::info(logger_, "Creating instance...");
 
+  // Handle validation layers
+  std::vector<char const*> required_layers = {};
+  if (kEnableValidationLayers) {
+    required_layers.assign(kValidationLayers.begin(), kValidationLayers.end());
+  }
+
+  uint32_t num_layers;
+  vkEnumerateInstanceLayerProperties(&num_layers, NULL);
+  std::vector<VkLayerProperties> layer_props(num_layers);
+  vkEnumerateInstanceLayerProperties(&num_layers, layer_props.data());
+
+  bool all_layers_available = true;
+  for (char const* desired_layer : required_layers) {
+    bool layer_available = false;
+    for (VkLayerProperties layer : layer_props) {
+      if (SDL_strcmp(desired_layer, layer.layerName)) {
+        layer_available = true;
+        break;
+      }
+    }
+
+    if (!layer_available) {
+      quill::warning(logger_, "Missing layer: {}", desired_layer);
+      all_layers_available = false;
+      break;
+    }
+  }
+
+  if (!all_layers_available) {
+    throw std::runtime_error("Requested validation layers are not available");
+  }
+
+  // Handle extensions
   uint32_t num_instance_extensions;
   const char* const* instance_extensions = SDL_Vulkan_GetInstanceExtensions(&num_instance_extensions);
   if (instance_extensions == NULL) {
-    quill::error(logger_, "Instance extensions should not be null");
-    return false;
+    throw std::runtime_error("Instance extensions should not be null");
   }
 
   VkApplicationInfo app_info = {};
@@ -88,13 +131,12 @@ bool App::createInstance() {
   instance_create_info.pApplicationInfo = &app_info;
   instance_create_info.enabledExtensionCount = num_extensions;
   instance_create_info.ppEnabledExtensionNames = extensions;
-  instance_create_info.enabledLayerCount = 0;
-  instance_create_info.ppEnabledLayerNames = NULL;
+  instance_create_info.enabledLayerCount = required_layers.size();
+  instance_create_info.ppEnabledLayerNames = required_layers.data();
 
   VkResult result = vkCreateInstance(&instance_create_info, NULL, &instance_);
   SDL_free(extensions);
   if (result != VK_SUCCESS) {
-    quill::error(logger_, "VkInstance should have been created successfully");
     throw std::runtime_error("Failed to create VkInstance");
     return false;
   }
