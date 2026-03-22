@@ -5,6 +5,7 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_vulkan.h>
 #include <cstddef>
 #include <cstdint>
 #include <quill/Logger.h>
@@ -48,6 +49,11 @@ App::App(quill::Logger* logger) : logger_(logger) {
   selectPhysicalDevice();
 
   createLogicalDevice();
+
+  bool success = SDL_Vulkan_CreateSurface(window_, instance_, NULL, &surface_);
+  if (!success) {
+    throw std::runtime_error(std::string("Failed to create Vulkan surface: ") + std::string(SDL_GetError()));
+  }
 }
 
 App::~App() {
@@ -74,7 +80,7 @@ bool App::createWindow() {
 }
 
 /*
-Initialise the Vulkan instance
+Initialise Vulkan
 */
 bool App::checkValidationLayers(const char* const* p_layers, uint32_t num_layers) {
   uint32_t num_layer_props;
@@ -279,6 +285,12 @@ bool App::createLogicalDevice() {
 
   return true;
 }
+
+/*
+Presentation stuff
+*/
+
+
 
 void App::mainLoop() {
   bool done = false;
