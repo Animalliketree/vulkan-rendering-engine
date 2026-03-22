@@ -69,38 +69,45 @@ bool App::createWindow() {
   return true;
 }
 
-bool App::createInstance() {
-  quill::info(logger_, "Creating instance...");
+/*
+Initialise the Vulkan instance
+*/
 
-  // Handle validation layers
-  std::vector<char const*> required_layers = {};
-  if (kEnableValidationLayers) {
-    required_layers.assign(kValidationLayers.begin(), kValidationLayers.end());
-  }
-
-  uint32_t num_layers;
-  vkEnumerateInstanceLayerProperties(&num_layers, NULL);
-  std::vector<VkLayerProperties> layer_props(num_layers);
-  vkEnumerateInstanceLayerProperties(&num_layers, layer_props.data());
+bool App::checkValidationLayers(char const* const* p_layers, uint32_t num_layers) {
+  uint32_t num_layer_props;
+  vkEnumerateInstanceLayerProperties(&num_layer_props, NULL);
+  std::vector<VkLayerProperties> layer_props(num_layer_props);
+  vkEnumerateInstanceLayerProperties(&num_layer_props, layer_props.data());
 
   bool all_layers_available = true;
-  for (char const* desired_layer : required_layers) {
+  for (uint32_t i = 0; i < num_layers; i++) {
     bool layer_available = false;
     for (VkLayerProperties layer : layer_props) {
-      if (SDL_strcmp(desired_layer, layer.layerName)) {
+      if (SDL_strcmp(p_layers[i], layer.layerName)) {
         layer_available = true;
         break;
       }
     }
 
     if (!layer_available) {
-      quill::warning(logger_, "Missing layer: {}", desired_layer);
+      quill::warning(logger_, "Missing layer: {}", p_layers[i]);
       all_layers_available = false;
       break;
     }
   }
 
-  if (!all_layers_available) {
+  return all_layers_available;
+}
+
+bool App::createInstance() {
+  quill::info(logger_, "Creating instance...");
+
+  std::vector<char const*> required_layers = {};
+  if (kEnableValidationLayers) {
+    required_layers.assign(kValidationLayers.begin(), kValidationLayers.end());
+  }
+
+  if (checkValidationLayers(required_layers.data(), required_layers.size()) == false) {
     throw std::runtime_error("Requested validation layers are not available");
   }
 
