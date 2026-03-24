@@ -34,7 +34,8 @@ private:
   // Presentation
   VkSurfaceKHR surface_;
   VkSwapchainKHR swapchain_;
-  std::vector<VkImage> images_;
+  std::vector<VkImage> swapchain_images_;
+  std::vector<VkImageView> swapchain_image_views_;
   VkSurfaceFormatKHR swapchain_format_;
   VkExtent2D swapchain_extent_;
 
@@ -61,6 +62,8 @@ private:
   VkExtent2D chooseSwapExtent(VkSurfaceCapabilitiesKHR surface_capabilities);
 
   bool createSwapchain();
+
+  bool createImageViews();
 };
 
 #endif // RENDER_HPP_

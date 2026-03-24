@@ -45,7 +45,6 @@ constexpr bool kEnableValidationLayers = true;
 
 App::App(quill::Logger* logger) : logger_(logger) {
   createWindow();
-
   createInstance();
   vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
 
@@ -55,10 +54,9 @@ App::App(quill::Logger* logger) : logger_(logger) {
   }
 
   selectPhysicalDevice();
-
   createLogicalDevice();
-
   createSwapchain();
+  createImageViews();
 }
 
 App::~App() {
@@ -373,11 +371,38 @@ bool App::createSwapchain() {
 
   uint32_t num_images;
   vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, NULL);
-  images_.resize(num_images);
-  vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, images_.data());
+  swapchain_images_.resize(num_images);
+  vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, swapchain_images_.data());
 
   swapchain_format_ = format;
   swapchain_extent_ = extent;
+
+  return true;
+}
+
+bool App::createImageViews() {
+  assert(swapchain_image_views_.empty());
+
+  VkImageViewCreateInfo create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  create_info.pNext = NULL;
+  create_info.flags = 0;
+  create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  create_info.format = swapchain_format_.format;
+  create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  create_info.components = { 
+    VK_COMPONENT_SWIZZLE_IDENTITY,
+    VK_COMPONENT_SWIZZLE_IDENTITY,
+    VK_COMPONENT_SWIZZLE_IDENTITY,
+    VK_COMPONENT_SWIZZLE_IDENTITY
+  };
+
+  swapchain_image_views_.resize(swapchain_images_.size());
+  for (uint32_t i = 0; i < swapchain_images_.size(); i++) {
+    create_info.image = swapchain_images_[i];
+
+    vkCreateImageView(device_, &create_info, NULL, &swapchain_image_views_[i]);
+  }
 
   return true;
 }
