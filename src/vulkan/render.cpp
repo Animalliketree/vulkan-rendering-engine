@@ -8,10 +8,13 @@
 #include <SDL3/SDL_vulkan.h>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <quill/Logger.h>
 #include <stdexcept>
 #include <vector>
 #include <iostream>
+#include <cassert>
+#include <algorithm>
 
 #include <quill/SimpleSetup.h>
 #include <quill/LogFunctions.h>
@@ -46,18 +49,22 @@ App::App(quill::Logger* logger) : logger_(logger) {
   createInstance();
   vkGetInstanceProcAddr = (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr();
 
-  selectPhysicalDevice();
-
-  createLogicalDevice();
-
   bool success = SDL_Vulkan_CreateSurface(window_, instance_, NULL, &surface_);
   if (!success) {
     throw std::runtime_error(std::string("Failed to create Vulkan surface: ") + std::string(SDL_GetError()));
   }
+
+  selectPhysicalDevice();
+
+  createLogicalDevice();
+
+  createSwapchain();
 }
 
 App::~App() {
+  vkDestroySwapchainKHR(device_, swapchain_, NULL);
   vkDestroyDevice(device_, NULL);
+  SDL_Vulkan_DestroySurface(instance_, surface_, NULL);
   vkDestroyInstance(instance_, NULL);
   SDL_DestroyWindow(window_);
   SDL_Quit();
@@ -182,12 +189,13 @@ bool App::selectPhysicalDevice() {
     uint32_t num_qf_props;
     vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &num_qf_props, NULL);
     std::vector<VkQueueFamilyProperties> qf_props(num_qf_props);
-    vkGetPhysicalDeviceQueueFamilyProperties(devices[i], &num_qf_props, qf_props.data());
 
+    uint32_t graphics_qf_idx = 0;
     bool supports_graphics = false;
-    for (VkQueueFamilyProperties qf_prop : qf_props) {
-      if ((qf_prop.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) {
+    for (uint32_t i = 0; i < qf_props.size(); i++) {
+      if (SDL_Vulkan_GetPresentationSupport(instance_, devices[i], i)) {
         supports_graphics = true;
+        uint32_t graphics_qf_idx = i;
         break;
       }
     }
@@ -216,6 +224,7 @@ bool App::selectPhysicalDevice() {
     }
 
     if (!desired_extensions_available) continue;
+
 
     VkPhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_features;
     dynamic_state_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
@@ -257,7 +266,7 @@ bool App::createLogicalDevice() {
   quill::info(logger_, "Creating logical device and queues...");
 
   graphics_qf_idx_ = chooseQueueFamily();
-  const float queue_priority = 1.0f;
+  const float queue_priority = 0.5f;
   VkDeviceQueueCreateInfo queue_create_info = {};
   queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
   queue_create_info.pNext = NULL;
@@ -289,8 +298,89 @@ bool App::createLogicalDevice() {
 /*
 Presentation stuff
 */
+VkSurfaceFormatKHR App::chooseSwapSurfaceFormat() {
+  uint32_t num_formats;
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_formats, NULL);
+  std::vector<VkSurfaceFormatKHR> formats(num_formats);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_formats, formats.data());
 
+  assert(num_formats > 0);
+  VkFormat desired_format = VK_FORMAT_B8G8R8A8_SRGB;
+  for (VkSurfaceFormatKHR format : formats) {
+    if (format.format == desired_format) {
+      return format;
+    }
+  }
+  return formats[0];
+}
 
+VkPresentModeKHR App::chooseSwapPresentMode() {
+  uint32_t num_modes;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_, &num_modes, NULL);
+  std::vector<VkPresentModeKHR> modes(num_modes);
+  vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_, &num_modes, modes.data());
+
+  assert(num_modes > 0);
+  VkPresentModeKHR desired_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+  for (uint32_t i = 0; i < num_modes; i++) {
+    if (modes[i] == desired_mode) return modes[i];
+  }
+
+  return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+VkExtent2D App::chooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities) {
+  if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+    return capabilities.currentExtent;
+  }
+
+  return {
+    std::clamp<uint32_t>(WIDTH, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+    std::clamp<uint32_t>(HEIGHT, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+  };
+}
+
+bool App::createSwapchain() {
+  VkSurfaceCapabilitiesKHR capabilities;
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &capabilities);
+
+  VkExtent2D extent = chooseSwapExtent(capabilities);
+
+  VkSurfaceFormatKHR format = chooseSwapSurfaceFormat();
+
+  uint32_t min_images = capabilities.maxImageCount > 0
+    ? std::min(capabilities.minImageCount + 1, capabilities.maxImageCount)
+    : capabilities.minImageCount + 1;
+
+  VkSwapchainCreateInfoKHR create_info = {};
+  create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+  create_info.pNext = NULL;
+  create_info.surface = surface_;
+  create_info.minImageCount = min_images;
+  create_info.imageFormat = format.format;
+  create_info.imageColorSpace = format.colorSpace;
+  create_info.imageExtent = extent;
+  create_info.imageArrayLayers = 1;
+  create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  create_info.preTransform = capabilities.currentTransform;
+  create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  create_info.presentMode = chooseSwapPresentMode();
+  create_info.clipped = true;
+  create_info.oldSwapchain = NULL;
+
+  vkCreateSwapchainKHR(device_, &create_info, NULL, &swapchain_);
+
+  uint32_t num_images;
+  vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, NULL);
+  images_.resize(num_images);
+  vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, images_.data());
+
+  swapchain_format_ = format;
+  swapchain_extent_ = extent;
+
+  return true;
+}
 
 void App::mainLoop() {
   bool done = false;
