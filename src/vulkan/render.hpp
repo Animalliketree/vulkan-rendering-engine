@@ -19,7 +19,9 @@ public:
   App(quill::Logger* logger);
   ~App();
 
-  void mainLoop();
+  bool drawFrame();
+
+  inline void waitIdle() { vkDeviceWaitIdle(device_); }
 
 // Internal
 private:
@@ -39,14 +41,28 @@ private:
   VkSurfaceFormatKHR swapchain_format_;
   VkExtent2D swapchain_extent_;
 
+  // Graphics
+  VkShaderModule shader_module_;
+  VkPipeline graphics_pipeline_;
+  VkPipelineLayout graphics_pipeline_layout_;
+
+  // Drawing
+  VkCommandPool command_pool_;
+  VkCommandBuffer command_buffer_;
+
+  // Synchronisation
+  VkSemaphore present_complete_semaphore_;
+  VkSemaphore render_finished_semaphore_;
+  VkFence draw_fence_;
+
   // Vulkan functions to load
-  PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
+  //PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
 
   quill::Logger* logger_;
 
   bool createWindow();
 
-  bool checkValidationLayers(char const* const* p_layers, uint32_t num_layers);
+  bool checkValidationLayerSupport(char const* const* p_layers, uint32_t num_layers);
   bool createInstance();
 
   bool selectPhysicalDevice();
@@ -64,6 +80,23 @@ private:
   bool createSwapchain();
 
   bool createImageViews();
+
+  VkShaderModule createShaderModule(const std::vector<char>& code);
+
+  bool createGraphicsPipeline();
+
+  bool createCommandPool();
+
+  bool createCommandBuffer();
+
+  void transitionImageLayout(uint32_t image_index, VkImageLayout old_layout,
+    VkImageLayout new_layout, VkAccessFlags2 src_access_mask,
+    VkAccessFlags2 dst_access_mask, VkPipelineStageFlags2 src_stage_mask,
+    VkPipelineStageFlags2 dst_stage_mask);
+
+  bool recordCommandBuffer(uint32_t image_index);
+
+  bool createSyncObjects();
 };
 
 #endif // RENDER_HPP_

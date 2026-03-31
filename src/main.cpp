@@ -12,7 +12,20 @@ int main() {
     try {
         App app(logger);
 
-        app.mainLoop();
+        bool done = false;
+        while (!done) {
+            SDL_Event event;
+
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT) {
+                    done = true;
+                }
+            }
+
+            app.drawFrame();
+        }
+
+        app.waitIdle();
     } catch (const std::exception& e) {
         quill::error(logger, e.what());
         return 1;
