@@ -1,8 +1,9 @@
-#include <exception>
 
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <quill/LogFunctions.h>
+
+#include <exception>
 
 #include "vulkan/render.hpp"
 

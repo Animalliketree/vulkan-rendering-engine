@@ -1,22 +1,22 @@
-#ifndef RENDER_HPP_
-#define RENDER_HPP_
+#ifndef SRC_VULKAN_RENDER_HPP_
+#define SRC_VULKAN_RENDER_HPP_
 
+#include <quill/Logger.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_main.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
-#include <quill/Logger.h>
-#include <vector>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
 #include <cstdint>
+#include <vector>
 
 class App {
-public:
-  App(quill::Logger* logger);
+ public:
+  explicit App(quill::Logger* logger);
   ~App();
 
   bool drawFrame();
@@ -24,7 +24,7 @@ public:
   inline void waitIdle() { vkDeviceWaitIdle(device_); }
 
 // Internal
-private:
+ private:
   // Initialisation
   SDL_Window* window_ = NULL;
   VkInstance instance_ = NULL;
@@ -55,14 +55,12 @@ private:
   VkSemaphore render_finished_semaphore_;
   VkFence draw_fence_;
 
-  // Vulkan functions to load
-  //PFN_vkGetInstanceProcAddr vkGetInstanceProcAddr;
-
   quill::Logger* logger_;
 
   bool createWindow();
 
-  bool checkValidationLayerSupport(char const* const* p_layers, uint32_t num_layers);
+  bool checkValidationLayerSupport(char const* const* p_layers,
+                                   uint32_t num_layers);
   bool createInstance();
 
   bool selectPhysicalDevice();
@@ -99,4 +97,4 @@ private:
   bool createSyncObjects();
 };
 
-#endif // RENDER_HPP_
+#endif  // SRC_VULKAN_RENDER_HPP_
