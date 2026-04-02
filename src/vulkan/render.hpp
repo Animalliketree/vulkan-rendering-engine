@@ -48,12 +48,13 @@ class App {
 
   // Drawing
   VkCommandPool command_pool_;
-  VkCommandBuffer command_buffer_;
+  std::vector<VkCommandBuffer> command_buffers_;
 
   // Synchronisation
-  VkSemaphore present_complete_semaphore_;
-  VkSemaphore render_finished_semaphore_;
-  VkFence draw_fence_;
+  std::vector<VkSemaphore> present_complete_semaphores_;
+  std::vector<VkSemaphore> render_finished_semaphores_;
+  std::vector<VkFence> draw_fences_;
+  uint32_t frame_index_ = 0;
 
   quill::Logger* logger_;
 
@@ -85,7 +86,7 @@ class App {
 
   bool createCommandPool();
 
-  bool createCommandBuffer();
+  bool createCommandBuffers();
 
   void transitionImageLayout(uint32_t image_index, VkImageLayout old_layout,
     VkImageLayout new_layout, VkAccessFlags2 src_access_mask,

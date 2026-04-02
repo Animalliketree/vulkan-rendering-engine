@@ -33,8 +33,11 @@ const std::vector<char const*> kValidationLayers = {
 const std::vector<const char*> kRequiredDeviceExtensions = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,
   VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-  VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME
+  VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
+  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
 };
+
+constexpr uint32_t kMaxFramesInFlight = 2;
 
 #ifdef NDEBUG
 constexpr bool kEnableValidationLayers = false;
@@ -42,10 +45,10 @@ constexpr bool kEnableValidationLayers = false;
 constexpr bool kEnableValidationLayers = true;
 #endif
 
-#define APP_TITLE "Game"
-#define ENGINE_TITLE "Hephaestus"
-#define WIDTH 800
-#define HEIGHT 600
+const char* kAppTitle = "Game";
+const char* kEngineTitle = "Hephaestus";
+constexpr uint32_t kWindowWidth = 800;
+constexpr uint32_t kWindowHeight = 600;
 
 App::App(quill::Logger* logger) : logger_(logger) {
   createWindow();
@@ -64,14 +67,16 @@ App::App(quill::Logger* logger) : logger_(logger) {
   createImageViews();
   createGraphicsPipeline();
   createCommandPool();
-  createCommandBuffer();
+  createCommandBuffers();
   createSyncObjects();
 }
 
 App::~App() {
-  vkDestroyFence(device_, draw_fence_, NULL);
-  vkDestroySemaphore(device_, present_complete_semaphore_, NULL);
-  vkDestroySemaphore(device_, render_finished_semaphore_, NULL);
+  for (VkFence fence : draw_fences_) vkDestroyFence(device_, fence, NULL);
+  for (VkSemaphore semaphore : present_complete_semaphores_)
+      vkDestroySemaphore(device_, semaphore, NULL);
+  for (VkSemaphore semaphore : render_finished_semaphores_)
+      vkDestroySemaphore(device_, semaphore, NULL);
   vkDestroyCommandPool(device_, command_pool_, NULL);
   vkDestroyPipeline(device_, graphics_pipeline_, NULL);
   vkDestroyPipelineLayout(device_, graphics_pipeline_layout_, NULL);
@@ -88,10 +93,11 @@ App::~App() {
 }
 
 bool App::createWindow() {
-  SDL_SetAppMetadata(APP_TITLE, "0.0.1", "");
+  SDL_SetAppMetadata(kAppTitle, "0.0.1", "");
   SDL_Init(SDL_INIT_VIDEO);
 
-  window_ = SDL_CreateWindow(APP_TITLE, WIDTH, HEIGHT, SDL_WINDOW_VULKAN);
+  window_ = SDL_CreateWindow(kAppTitle, kWindowWidth, kWindowHeight,
+                             SDL_WINDOW_VULKAN);
 
   if (window_ == NULL) {
     quill::error(logger_, "Failed to create SDL window: {}", SDL_GetError());
@@ -155,9 +161,9 @@ bool App::createInstance() {
 
   VkApplicationInfo app_info = {};
   app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-  app_info.pApplicationName = APP_TITLE;
+  app_info.pApplicationName = kAppTitle;
   app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-  app_info.pEngineName = ENGINE_TITLE;
+  app_info.pEngineName = kEngineTitle;
   app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
   app_info.apiVersion = VK_API_VERSION_1_4;
 
@@ -284,12 +290,12 @@ uint32_t App::chooseQueueFamily() {
 
 bool App::createLogicalDevice() {
   graphics_qf_idx_ = chooseQueueFamily();
-  const float queue_priority = 0.5f;
+  constexpr float kQueuePriority = 0.5f;
   VkDeviceQueueCreateInfo queue_create_info = {};
   queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
   queue_create_info.queueCount = 1;
   queue_create_info.queueFamilyIndex = graphics_qf_idx_;
-  queue_create_info.pQueuePriorities = &queue_priority;
+  queue_create_info.pQueuePriorities = &kQueuePriority;
 
   VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_features = {};
   extended_features.sType =
@@ -368,9 +374,9 @@ VkExtent2D App::chooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities) {
   }
 
   return {
-    std::clamp<uint32_t>(WIDTH, capabilities.minImageExtent.width,
+    std::clamp<uint32_t>(kWindowWidth, capabilities.minImageExtent.width,
                                 capabilities.maxImageExtent.width),
-    std::clamp<uint32_t>(HEIGHT, capabilities.minImageExtent.height,
+    std::clamp<uint32_t>(kWindowHeight, capabilities.minImageExtent.height,
                                  capabilities.maxImageExtent.height)
   };
 }
@@ -626,15 +632,19 @@ bool App::createCommandPool() {
   return true;
 }
 
-bool App::createCommandBuffer() {
+bool App::createCommandBuffers() {
+  assert(command_buffers_.empty());
+
   VkCommandBufferAllocateInfo alloc_info = {};
   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   alloc_info.commandPool = command_pool_;
   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  alloc_info.commandBufferCount = 1;
+  alloc_info.commandBufferCount = kMaxFramesInFlight;
+
+  command_buffers_.resize(kMaxFramesInFlight);
 
   VkResult result = vkAllocateCommandBuffers(device_, &alloc_info,
-                                             &command_buffer_);
+                                             command_buffers_.data());
   if (result != VK_SUCCESS) throw std::runtime_error(
       "Failed to create command buffer!");
 
@@ -667,7 +677,7 @@ void App::transitionImageLayout(uint32_t image_index, VkImageLayout old_layout,
   dependency_info.dependencyFlags = 0;
   dependency_info.imageMemoryBarrierCount = 1;
   dependency_info.pImageMemoryBarriers = &barrier;
-  vkCmdPipelineBarrier2(command_buffer_, &dependency_info);
+  vkCmdPipelineBarrier2(command_buffers_[frame_index_], &dependency_info);
 }
 
 bool App::recordCommandBuffer(uint32_t image_index) {
@@ -675,7 +685,7 @@ bool App::recordCommandBuffer(uint32_t image_index) {
   begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  vkBeginCommandBuffer(command_buffer_, &begin_info);
+  vkBeginCommandBuffer(command_buffers_[frame_index_], &begin_info);
 
   transitionImageLayout(
     image_index,
@@ -702,9 +712,9 @@ bool App::recordCommandBuffer(uint32_t image_index) {
   rendering_info.layerCount = 1;
   rendering_info.colorAttachmentCount = 1;
   rendering_info.pColorAttachments = &attachment_info;
-  vkCmdBeginRendering(command_buffer_, &rendering_info);
+  vkCmdBeginRendering(command_buffers_[frame_index_], &rendering_info);
 
-  vkCmdBindPipeline(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS,
+  vkCmdBindPipeline(command_buffers_[frame_index_], VK_PIPELINE_BIND_POINT_GRAPHICS,
                     graphics_pipeline_);
 
   VkViewport viewport = {
@@ -714,10 +724,10 @@ bool App::recordCommandBuffer(uint32_t image_index) {
     0.0f, 1.0f
   };
   VkRect2D scissor = {VkOffset2D{0, 0}, swapchain_extent_};
-  vkCmdSetViewport(command_buffer_, 0, 1, &viewport);
-  vkCmdSetScissor(command_buffer_, 0, 1, &scissor);
-  vkCmdDraw(command_buffer_, 3, 1, 0, 0);
-  vkCmdEndRendering(command_buffer_);
+  vkCmdSetViewport(command_buffers_[frame_index_], 0, 1, &viewport);
+  vkCmdSetScissor(command_buffers_[frame_index_], 0, 1, &scissor);
+  vkCmdDraw(command_buffers_[frame_index_], 3, 1, 0, 0);
+  vkCmdEndRendering(command_buffers_[frame_index_]);
 
   transitionImageLayout(
     image_index,
@@ -728,60 +738,84 @@ bool App::recordCommandBuffer(uint32_t image_index) {
     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
     VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT);
 
-  vkEndCommandBuffer(command_buffer_);
+  vkEndCommandBuffer(command_buffers_[frame_index_]);
   return true;
 }
 
 bool App::createSyncObjects() {
+  assert(present_complete_semaphores_.empty()
+         && render_finished_semaphores_.empty()
+         && draw_fences_.empty());
   VkSemaphoreCreateInfo semaphore_info = {};
   semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
   semaphore_info.flags = 0;
-  vkCreateSemaphore(device_, &semaphore_info, NULL,
-                    &present_complete_semaphore_);
-  vkCreateSemaphore(device_, &semaphore_info, NULL,
-                    &render_finished_semaphore_);
 
   VkFenceCreateInfo fence_info = {};
   fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
   fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-  vkCreateFence(device_, &fence_info, NULL, &draw_fence_);
+
+  render_finished_semaphores_.resize(swapchain_images_.size());
+  for (size_t i = 0; i < swapchain_images_.size(); i++) {
+    vkCreateSemaphore(device_, &semaphore_info, NULL,
+                      &render_finished_semaphores_[i]);
+  }
+
+  present_complete_semaphores_.resize(kMaxFramesInFlight);
+  draw_fences_.resize(kMaxFramesInFlight);
+  for (size_t i = 0; i < kMaxFramesInFlight; i++) {
+    vkCreateSemaphore(device_, &semaphore_info, NULL,
+                      &present_complete_semaphores_[i]);
+    vkCreateFence(device_, &fence_info, NULL, &draw_fences_[i]);
+  }
+
   return true;
 }
 
 bool App::drawFrame() {
-  vkWaitForFences(device_, 1, &draw_fence_, VK_TRUE, UINT64_MAX);
+  VkResult result = vkWaitForFences(device_, 1, &draw_fences_[frame_index_],
+                                    VK_TRUE, UINT64_MAX);
+  if (result != VK_SUCCESS) throw std::runtime_error(
+      "Failed to wait for fence!");
+  result = vkResetFences(device_, 1, &draw_fences_[frame_index_]);
+  if (result != VK_SUCCESS) throw std::runtime_error(
+      "Failed to reset fence!");
 
   uint32_t image_index;
-  vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
-                        present_complete_semaphore_, NULL, &image_index);
+  result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
+                        present_complete_semaphores_[frame_index_], NULL,
+                        &image_index);
+  if (result != VK_SUCCESS) throw std::runtime_error(
+      "Failed to acquire next image!");
 
+  vkResetCommandBuffer(command_buffers_[frame_index_], 0);
   recordCommandBuffer(image_index);
-  vkResetFences(device_, 1, &draw_fence_);
 
   VkPipelineStageFlags wait_dst_stage_mask =
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
   VkSubmitInfo submitInfo = {};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
   submitInfo.waitSemaphoreCount = 1;
-  submitInfo.pWaitSemaphores = &present_complete_semaphore_;
+  submitInfo.pWaitSemaphores = &present_complete_semaphores_[frame_index_];
   submitInfo.pWaitDstStageMask = &wait_dst_stage_mask;
   submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &command_buffer_;
+  submitInfo.pCommandBuffers = &command_buffers_[frame_index_];
   submitInfo.signalSemaphoreCount = 1;
-  submitInfo.pSignalSemaphores = &render_finished_semaphore_;
+  submitInfo.pSignalSemaphores = &render_finished_semaphores_[frame_index_];
 
-  vkQueueSubmit(graphics_queue_, 1, &submitInfo, draw_fence_);
+  vkQueueSubmit(graphics_queue_, 1, &submitInfo, draw_fences_[frame_index_]);
 
   VkPresentInfoKHR present_info = {};
   present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
   present_info.waitSemaphoreCount = 1;
-  present_info.pWaitSemaphores = &render_finished_semaphore_;
+  present_info.pWaitSemaphores = &render_finished_semaphores_[frame_index_];
   present_info.swapchainCount = 1;
   present_info.pSwapchains = &swapchain_;
   present_info.pImageIndices = &image_index;
 
-  VkResult result = vkQueuePresentKHR(graphics_queue_, &present_info);
+  result = vkQueuePresentKHR(graphics_queue_, &present_info);
   if (result != VK_SUCCESS) throw std::runtime_error(
       "Failed to present image to swapchain!");
+
+  frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;
   return true;
 }
