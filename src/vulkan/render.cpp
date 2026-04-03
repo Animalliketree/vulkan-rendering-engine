@@ -305,6 +305,7 @@ bool App::createLogicalDevice() {
       VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
   vk_1_3_features.pNext = &extended_features;
   vk_1_3_features.dynamicRendering = VK_TRUE;
+  vk_1_3_features.synchronization2 = VK_TRUE;
 
   VkPhysicalDeviceFeatures2 features_2 = {};
   features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -441,6 +442,15 @@ bool App::createImageViews() {
 
     vkCreateImageView(device_, &view_info, NULL, &swapchain_image_views_[i]);
   }
+
+  return true;
+}
+
+bool App::recreateSwapchain() {
+  vkDeviceWaitIdle(device_);
+
+  createSwapchain();
+  createImageViews();
 
   return true;
 }
@@ -789,14 +799,14 @@ bool App::drawFrame() {
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &command_buffers_[frame_index_];
   submitInfo.signalSemaphoreCount = 1;
-  submitInfo.pSignalSemaphores = &render_finished_semaphores_[frame_index_];
+  submitInfo.pSignalSemaphores = &render_finished_semaphores_[image_index];
 
   vkQueueSubmit(graphics_queue_, 1, &submitInfo, draw_fences_[frame_index_]);
 
   VkPresentInfoKHR present_info = {};
   present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
   present_info.waitSemaphoreCount = 1;
-  present_info.pWaitSemaphores = &render_finished_semaphores_[frame_index_];
+  present_info.pWaitSemaphores = &render_finished_semaphores_[image_index];
   present_info.swapchainCount = 1;
   present_info.pSwapchains = &swapchain_;
   present_info.pImageIndices = &image_index;

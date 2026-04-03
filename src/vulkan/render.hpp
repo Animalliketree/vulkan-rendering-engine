@@ -78,6 +78,8 @@ class App {
 
   bool createSwapchain();
 
+  bool recreateSwapchain();
+
   bool createImageViews();
 
   VkShaderModule createShaderModule(const std::vector<char>& code);
