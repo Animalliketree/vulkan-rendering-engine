@@ -81,9 +81,8 @@ App::~App() {
   vkDestroyPipeline(device_, graphics_pipeline_, NULL);
   vkDestroyPipelineLayout(device_, graphics_pipeline_layout_, NULL);
   vkDestroyShaderModule(device_, shader_module_, NULL);
-  for (VkImageView view : swapchain_image_views_) {
+  for (VkImageView view : swapchain_image_views_)
     vkDestroyImageView(device_, view, NULL);
-  }
   vkDestroySwapchainKHR(device_, swapchain_, NULL);
   vkDestroyDevice(device_, NULL);
   SDL_Vulkan_DestroySurface(instance_, surface_, NULL);
@@ -99,10 +98,8 @@ bool App::createWindow() {
   window_ = SDL_CreateWindow(kAppTitle, kWindowWidth, kWindowHeight,
                              SDL_WINDOW_VULKAN);
 
-  if (window_ == NULL) {
-    quill::error(logger_, "Failed to create SDL window: {}", SDL_GetError());
-    throw std::runtime_error("Failed to create SDL window");
-  }
+  if (window_ == NULL) throw std::runtime_error(
+      "Failed to create SDL window!" + std::to_string(*SDL_GetError()));
 
   return true;
 }
@@ -128,7 +125,7 @@ bool App::checkValidationLayerSupport(const char* const* p_layers,
     }
 
     if (!layer_available) {
-      quill::warning(logger_, "Missing layer: {}", p_layers[i]);
+      quill::warning(logger_, "Layer not supported: {}", p_layers[i]);
       all_layers_available = false;
       break;
     }
@@ -147,16 +144,29 @@ bool App::createInstance() {
       required_layers.data(),
       required_layers.size());
 
-  if (!validation_layers_supported) {
-    throw std::runtime_error("Requested validation layers are not available");
-  }
-
   // Handle extensions
   uint32_t num_instance_extensions;
   const char* const* instance_extensions = SDL_Vulkan_GetInstanceExtensions(
       &num_instance_extensions);
   if (instance_extensions == NULL) {
     throw std::runtime_error("Instance extensions should not be null");
+  }
+
+  uint32_t num_extensions;
+  const char** extensions;
+  if (validation_layers_supported) {
+    num_extensions = num_instance_extensions + 1;
+    extensions = (const char**)(SDL_malloc(
+        num_extensions * sizeof(const char*)));
+    extensions[0] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
+    SDL_memcpy(&extensions[1], instance_extensions,
+              num_instance_extensions * sizeof(const char*));
+  } else {
+    num_extensions = num_instance_extensions;
+    extensions = (const char**)(SDL_malloc(
+        num_extensions * sizeof(const char*)));
+    SDL_memcpy(&extensions[0], instance_extensions,
+              num_instance_extensions * sizeof(const char*));
   }
 
   VkApplicationInfo app_info = {};
@@ -166,13 +176,6 @@ bool App::createInstance() {
   app_info.pEngineName = kEngineTitle;
   app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
   app_info.apiVersion = VK_API_VERSION_1_4;
-
-  uint32_t num_extensions = num_instance_extensions + 1;
-  const char** extensions = (const char**)(SDL_malloc(
-      num_extensions * sizeof(const char*)));
-  extensions[0] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
-  SDL_memcpy(&extensions[1], instance_extensions,
-             num_instance_extensions * sizeof(const char*));
 
   VkInstanceCreateInfo instance_create_info = {};
   instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
