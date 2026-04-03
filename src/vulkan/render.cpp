@@ -1,5 +1,6 @@
 #include "render.hpp"
 
+#include <SDL3/SDL_oldnames.h>
 #include <fcntl.h>
 #include <quill/LogFunctions.h>
 #include <quill/Logger.h>
@@ -451,12 +452,17 @@ bool App::createImageViews() {
 }
 
 bool App::recreateSwapchain() {
-  quill::info(logger_, "Recreating swapchain...");
+  SDL_WindowFlags flags = SDL_GetWindowFlags(window_);
+  while ((flags & SDL_WINDOW_MINIMIZED) != 0) {
+    SDL_WindowFlags flags = SDL_GetWindowFlags(window_);
+    SDL_WaitEvent(NULL);
+  }
   vkDeviceWaitIdle(device_);
 
   // Wipe current swapchain
   for (VkImageView view : swapchain_image_views_)
     vkDestroyImageView(device_, view, NULL);
+  swapchain_image_views_.clear();
 
   createSwapchain(swapchain_);
   createImageViews();
@@ -843,6 +849,11 @@ bool App::drawFrame() {
       break;
     default:
       throw std::runtime_error("Failed to present image to queue!");
+  }
+
+  if (framebuffer_resized_) {
+    framebuffer_resized_ = false;
+    recreateSwapchain();
   }
 
   frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;

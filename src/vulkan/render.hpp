@@ -20,6 +20,7 @@ class App {
   ~App();
 
   bool drawFrame();
+  inline void flagResized() { framebuffer_resized_ = true; }
 
   inline void waitIdle() { vkDeviceWaitIdle(device_); }
 
@@ -40,6 +41,7 @@ class App {
   std::vector<VkImageView> swapchain_image_views_;
   VkSurfaceFormatKHR swapchain_format_;
   VkExtent2D swapchain_extent_;
+  bool framebuffer_resized_ = false;
 
   // Graphics
   VkShaderModule shader_module_;
