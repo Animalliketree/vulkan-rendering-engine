@@ -76,7 +76,7 @@ class App {
 
   VkExtent2D chooseSwapExtent(VkSurfaceCapabilitiesKHR surface_capabilities);
 
-  bool createSwapchain();
+  bool createSwapchain(VkSwapchainKHR old_swapchain = NULL);
 
   bool recreateSwapchain();
 

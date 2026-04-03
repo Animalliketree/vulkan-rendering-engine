@@ -93,7 +93,7 @@ bool App::createWindow() {
   SDL_Init(SDL_INIT_VIDEO);
 
   window_ = SDL_CreateWindow(kAppTitle, kWindowWidth, kWindowHeight,
-                             SDL_WINDOW_VULKAN);
+                             SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
   if (window_ == NULL) throw std::runtime_error(
       "Failed to create SDL window: " + std::to_string(*SDL_GetError()));
@@ -376,7 +376,7 @@ VkExtent2D App::chooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities) {
   };
 }
 
-bool App::createSwapchain() {
+bool App::createSwapchain(VkSwapchainKHR old_swapchain) {
   VkSurfaceCapabilitiesKHR capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_,
                                             &capabilities);
@@ -403,9 +403,13 @@ bool App::createSwapchain() {
   swapchain_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   swapchain_info.presentMode = chooseSwapPresentMode();
   swapchain_info.clipped = true;
-  swapchain_info.oldSwapchain = NULL;
+  swapchain_info.oldSwapchain = old_swapchain;
 
-  vkCreateSwapchainKHR(device_, &swapchain_info, NULL, &swapchain_);
+  VkResult result = vkCreateSwapchainKHR(device_, &swapchain_info, NULL, &swapchain_);
+  if (result != VK_SUCCESS) throw std::runtime_error(
+      "Failed to create swapchain!");
+
+  vkDestroySwapchainKHR(device_, old_swapchain, NULL);
 
   uint32_t num_images;
   vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, NULL);
@@ -447,9 +451,14 @@ bool App::createImageViews() {
 }
 
 bool App::recreateSwapchain() {
+  quill::info(logger_, "Recreating swapchain...");
   vkDeviceWaitIdle(device_);
 
-  createSwapchain();
+  // Wipe current swapchain
+  for (VkImageView view : swapchain_image_views_)
+    vkDestroyImageView(device_, view, NULL);
+
+  createSwapchain(swapchain_);
   createImageViews();
 
   return true;
@@ -775,16 +784,27 @@ bool App::drawFrame() {
                                     VK_TRUE, UINT64_MAX);
   if (result != VK_SUCCESS) throw std::runtime_error(
       "Failed to wait for fence!");
-  result = vkResetFences(device_, 1, &draw_fences_[frame_index_]);
-  if (result != VK_SUCCESS) throw std::runtime_error(
-      "Failed to reset fence!");
 
   uint32_t image_index;
   result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
                         present_complete_semaphores_[frame_index_], NULL,
                         &image_index);
+  switch (result) {
+    case VK_ERROR_OUT_OF_DATE_KHR:
+      recreateSwapchain();
+      return false;
+    case VK_SUBOPTIMAL_KHR:
+      recreateSwapchain();
+      return false;
+    case VK_SUCCESS:
+      break;
+    default:
+      throw std::runtime_error("Failed to acquire next image!");
+  }
+
+  result = vkResetFences(device_, 1, &draw_fences_[frame_index_]);
   if (result != VK_SUCCESS) throw std::runtime_error(
-      "Failed to acquire next image!");
+      "Failed to reset fence!");
 
   vkResetCommandBuffer(command_buffers_[frame_index_], 0);
   recordCommandBuffer(image_index);
@@ -812,8 +832,18 @@ bool App::drawFrame() {
   present_info.pImageIndices = &image_index;
 
   result = vkQueuePresentKHR(graphics_queue_, &present_info);
-  if (result != VK_SUCCESS) throw std::runtime_error(
-      "Failed to present image to swapchain!");
+  switch (result) {
+    case VK_ERROR_OUT_OF_DATE_KHR:
+      recreateSwapchain();
+      return false;
+    case VK_SUBOPTIMAL_KHR:
+      recreateSwapchain();
+      break;
+    case VK_SUCCESS:
+      break;
+    default:
+      throw std::runtime_error("Failed to present image to queue!");
+  }
 
   frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;
   return true;
