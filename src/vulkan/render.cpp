@@ -55,11 +55,8 @@ App::App(quill::Logger* logger) : logger_(logger) {
   createInstance();
 
   bool success = SDL_Vulkan_CreateSurface(window_, instance_, NULL, &surface_);
-  if (!success) {
-    throw std::runtime_error(
-      std::string("Failed to create Vulkan surface: ")
-      + std::string(SDL_GetError()));
-  }
+  if (!success) throw std::runtime_error(
+      "Failed to create Vulkan surface: " + std::to_string(*SDL_GetError()));
 
   selectPhysicalDevice();
   createLogicalDevice();
@@ -99,33 +96,31 @@ bool App::createWindow() {
                              SDL_WINDOW_VULKAN);
 
   if (window_ == NULL) throw std::runtime_error(
-      "Failed to create SDL window!" + std::to_string(*SDL_GetError()));
+      "Failed to create SDL window: " + std::to_string(*SDL_GetError()));
 
   return true;
 }
 
-/*
-Initialise Vulkan
-*/
-bool App::checkValidationLayerSupport(const char* const* p_layers,
+/* Initialise Vulkan */
+bool App::checkValidationLayerSupport(const char* const* layers,
                                       uint32_t num_layers) {
-  uint32_t num_layer_props;
-  vkEnumerateInstanceLayerProperties(&num_layer_props, NULL);
-  std::vector<VkLayerProperties> layer_props(num_layer_props);
-  vkEnumerateInstanceLayerProperties(&num_layer_props, layer_props.data());
+  uint32_t num_props;
+  vkEnumerateInstanceLayerProperties(&num_props, NULL);
+  std::vector<VkLayerProperties> layer_props(num_props);
+  vkEnumerateInstanceLayerProperties(&num_props, layer_props.data());
 
   bool all_layers_available = true;
   for (uint32_t i = 0; i < num_layers; i++) {
     bool layer_available = false;
     for (VkLayerProperties layer : layer_props) {
-      if (SDL_strcmp(p_layers[i], layer.layerName) == 0) {
+      if (SDL_strcmp(layers[i], layer.layerName) == 0) {
         layer_available = true;
         break;
       }
     }
 
     if (!layer_available) {
-      quill::warning(logger_, "Layer not supported: {}", p_layers[i]);
+      quill::warning(logger_, "Layer not supported: {}", layers[i]);
       all_layers_available = false;
       break;
     }
@@ -177,16 +172,16 @@ bool App::createInstance() {
   app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
   app_info.apiVersion = VK_API_VERSION_1_4;
 
-  VkInstanceCreateInfo instance_create_info = {};
-  instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-  instance_create_info.pApplicationInfo = &app_info;
-  instance_create_info.enabledExtensionCount = num_extensions;
-  instance_create_info.ppEnabledExtensionNames = extensions;
-  instance_create_info.enabledLayerCount = static_cast<uint32_t>(
+  VkInstanceCreateInfo instance_info = {};
+  instance_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+  instance_info.pApplicationInfo = &app_info;
+  instance_info.enabledExtensionCount = num_extensions;
+  instance_info.ppEnabledExtensionNames = extensions;
+  instance_info.enabledLayerCount = static_cast<uint32_t>(
       required_layers.size());
-  instance_create_info.ppEnabledLayerNames = required_layers.data();
+  instance_info.ppEnabledLayerNames = required_layers.data();
 
-  VkResult result = vkCreateInstance(&instance_create_info, NULL, &instance_);
+  VkResult result = vkCreateInstance(&instance_info, NULL, &instance_);
   SDL_free(extensions);
   if (result != VK_SUCCESS) throw std::runtime_error(
       "Failed to create VkInstance");
@@ -233,23 +228,23 @@ bool App::selectPhysicalDevice() {
     vkEnumerateDeviceExtensionProperties(devices[i], NULL, &num_extensions,
                                          extensions.data());
 
-    bool desired_extensions_available = true;
-    for (const char* desired_extension : kRequiredDeviceExtensions) {
+    bool req_extensions_available = true;
+    for (const char* extension : kRequiredDeviceExtensions) {
       bool extension_available = false;
       for (VkExtensionProperties prop : extensions) {
-        if (strcmp(desired_extension, prop.extensionName) == 0) {
+        if (strcmp(extension, prop.extensionName) == 0) {
           extension_available = true;
           break;
         }
       }
 
       if (!extension_available) {
-        desired_extensions_available = false;
+        req_extensions_available = false;
         break;
       }
     }
 
-    if (!desired_extensions_available) continue;
+    if (!req_extensions_available) continue;
 
 
     VkPhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_features;
@@ -277,12 +272,12 @@ bool App::selectPhysicalDevice() {
 }
 
 uint32_t App::chooseQueueFamily() {
-  uint32_t queue_family_count;
+  uint32_t num_qf;
   vkGetPhysicalDeviceQueueFamilyProperties(physical_device_,
-                                           &queue_family_count, NULL);
-  std::vector<VkQueueFamilyProperties> props(queue_family_count);
+                                           &num_qf, NULL);
+  std::vector<VkQueueFamilyProperties> props(num_qf);
   vkGetPhysicalDeviceQueueFamilyProperties(physical_device_,
-                                           &queue_family_count, props.data());
+                                           &num_qf, props.data());
 
   for (uint32_t i = 0; i < props.size(); i++) {
     if ((props[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0) return i;
@@ -294,11 +289,11 @@ uint32_t App::chooseQueueFamily() {
 bool App::createLogicalDevice() {
   graphics_qf_idx_ = chooseQueueFamily();
   constexpr float kQueuePriority = 0.5f;
-  VkDeviceQueueCreateInfo queue_create_info = {};
-  queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-  queue_create_info.queueCount = 1;
-  queue_create_info.queueFamilyIndex = graphics_qf_idx_;
-  queue_create_info.pQueuePriorities = &kQueuePriority;
+  VkDeviceQueueCreateInfo queue_info = {};
+  queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+  queue_info.queueCount = 1;
+  queue_info.queueFamilyIndex = graphics_qf_idx_;
+  queue_info.pQueuePriorities = &kQueuePriority;
 
   VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_features = {};
   extended_features.sType =
@@ -315,17 +310,17 @@ bool App::createLogicalDevice() {
   features_2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
   features_2.pNext = &vk_1_3_features;
 
-  VkDeviceCreateInfo device_create_info = {};
-  device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-  device_create_info.pNext = &features_2;
-  device_create_info.queueCreateInfoCount = 1;
-  device_create_info.pQueueCreateInfos = &queue_create_info;
-  device_create_info.enabledExtensionCount = static_cast<uint32_t>(
+  VkDeviceCreateInfo device_info = {};
+  device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+  device_info.pNext = &features_2;
+  device_info.queueCreateInfoCount = 1;
+  device_info.pQueueCreateInfos = &queue_info;
+  device_info.enabledExtensionCount = static_cast<uint32_t>(
       kRequiredDeviceExtensions.size());
-  device_create_info.ppEnabledExtensionNames =
+  device_info.ppEnabledExtensionNames =
       kRequiredDeviceExtensions.data();
 
-  VkResult result = vkCreateDevice(physical_device_, &device_create_info, NULL,
+  VkResult result = vkCreateDevice(physical_device_, &device_info, NULL,
                                    &device_);
   if (result != VK_SUCCESS) throw std::runtime_error(
       "Failed to create logical device!");
@@ -335,9 +330,7 @@ bool App::createLogicalDevice() {
   return true;
 }
 
-/*
-Presentation stuff
-*/
+/* Presentation stuff */
 VkSurfaceFormatKHR App::chooseSwapSurfaceFormat() {
   uint32_t num_formats;
   vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_,
@@ -372,11 +365,9 @@ VkPresentModeKHR App::chooseSwapPresentMode() {
 }
 
 VkExtent2D App::chooseSwapExtent(VkSurfaceCapabilitiesKHR capabilities) {
-  if (capabilities.currentExtent.width != UINT32_MAX) {
-    return capabilities.currentExtent;
-  }
-
-  return {
+  if (capabilities.currentExtent.width != UINT32_MAX)
+      return capabilities.currentExtent;
+  else return {
     std::clamp<uint32_t>(kWindowWidth, capabilities.minImageExtent.width,
                                 capabilities.maxImageExtent.width),
     std::clamp<uint32_t>(kWindowHeight, capabilities.minImageExtent.height,
@@ -397,23 +388,23 @@ bool App::createSwapchain() {
     ? std::min(capabilities.minImageCount + 1, capabilities.maxImageCount)
     : capabilities.minImageCount + 1;
 
-  VkSwapchainCreateInfoKHR create_info = {};
-  create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-  create_info.surface = surface_;
-  create_info.minImageCount = min_images;
-  create_info.imageFormat = format.format;
-  create_info.imageColorSpace = format.colorSpace;
-  create_info.imageExtent = extent;
-  create_info.imageArrayLayers = 1;
-  create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  create_info.preTransform = capabilities.currentTransform;
-  create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-  create_info.presentMode = chooseSwapPresentMode();
-  create_info.clipped = true;
-  create_info.oldSwapchain = NULL;
+  VkSwapchainCreateInfoKHR swapchain_info = {};
+  swapchain_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+  swapchain_info.surface = surface_;
+  swapchain_info.minImageCount = min_images;
+  swapchain_info.imageFormat = format.format;
+  swapchain_info.imageColorSpace = format.colorSpace;
+  swapchain_info.imageExtent = extent;
+  swapchain_info.imageArrayLayers = 1;
+  swapchain_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  swapchain_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  swapchain_info.preTransform = capabilities.currentTransform;
+  swapchain_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  swapchain_info.presentMode = chooseSwapPresentMode();
+  swapchain_info.clipped = true;
+  swapchain_info.oldSwapchain = NULL;
 
-  vkCreateSwapchainKHR(device_, &create_info, NULL, &swapchain_);
+  vkCreateSwapchainKHR(device_, &swapchain_info, NULL, &swapchain_);
 
   uint32_t num_images;
   vkGetSwapchainImagesKHR(device_, swapchain_, &num_images, NULL);
@@ -430,14 +421,14 @@ bool App::createSwapchain() {
 bool App::createImageViews() {
   assert(swapchain_image_views_.empty());
 
-  VkImageViewCreateInfo create_info = {};
-  create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  create_info.pNext = NULL;
-  create_info.flags = 0;
-  create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  create_info.format = swapchain_format_.format;
-  create_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-  create_info.components = {
+  VkImageViewCreateInfo view_info = {};
+  view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  view_info.pNext = NULL;
+  view_info.flags = 0;
+  view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  view_info.format = swapchain_format_.format;
+  view_info.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+  view_info.components = {
     VK_COMPONENT_SWIZZLE_IDENTITY,
     VK_COMPONENT_SWIZZLE_IDENTITY,
     VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -446,41 +437,38 @@ bool App::createImageViews() {
 
   swapchain_image_views_.resize(swapchain_images_.size());
   for (uint32_t i = 0; i < swapchain_images_.size(); i++) {
-    create_info.image = swapchain_images_[i];
+    view_info.image = swapchain_images_[i];
 
-    vkCreateImageView(device_, &create_info, NULL, &swapchain_image_views_[i]);
+    vkCreateImageView(device_, &view_info, NULL, &swapchain_image_views_[i]);
   }
 
   return true;
 }
 
-/*
-Graphics pipeline
-*/
+/* Graphics pipeline */
 static std::vector<char> readFile(const char* file_name) {
-  std::ifstream file;
-  file.open(file_name, std::ios::ate | std::ios::binary);
-
-  if (!file.is_open()) throw std::runtime_error("Failed to open file!");
+  std::ifstream ifs;
+  ifs.open(file_name, std::ios::ate | std::ios::binary);
+  if (!ifs.is_open()) throw std::runtime_error("Failed to open file!");
 
   std::vector<char> buffer(static_cast<std::vector<char>::size_type>(
-      file.tellg()));
+      ifs.tellg()));
 
-  file.seekg(0, std::ios::beg);
-  file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-  file.close();
+  ifs.seekg(0, std::ios::beg);
+  ifs.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+  ifs.close();
 
   return buffer;
 }
 
 VkShaderModule App::createShaderModule(const std::vector<char>& code) {
-  VkShaderModuleCreateInfo shader_info = {};
-  shader_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-  shader_info.codeSize = code.size() * sizeof(char);
-  shader_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
+  VkShaderModuleCreateInfo module_info = {};
+  module_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  module_info.codeSize = code.size() * sizeof(char);
+  module_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
   VkShaderModule module;
-  VkResult result = vkCreateShaderModule(device_, &shader_info, NULL, &module);
+  VkResult result = vkCreateShaderModule(device_, &module_info, NULL, &module);
   if (result != VK_SUCCESS) throw std::runtime_error(
       "Failed to create shader module!");
   return module;
@@ -528,11 +516,11 @@ bool App::createGraphicsPipeline() {
     VK_DYNAMIC_STATE_VIEWPORT,
     VK_DYNAMIC_STATE_SCISSOR};
 
-  VkPipelineDynamicStateCreateInfo dynamic_state = {};
-  dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-  dynamic_state.dynamicStateCount = static_cast<uint32_t>(
+  VkPipelineDynamicStateCreateInfo dyn_state_info = {};
+  dyn_state_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  dyn_state_info.dynamicStateCount = static_cast<uint32_t>(
       dynamic_states.size());
-  dynamic_state.pDynamicStates = dynamic_states.data();
+  dyn_state_info.pDynamicStates = dynamic_states.data();
 
   VkPipelineViewportStateCreateInfo viewport_info = {};
   viewport_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -602,7 +590,7 @@ bool App::createGraphicsPipeline() {
   pipeline_info.pRasterizationState = &rasterizer_info;
   pipeline_info.pMultisampleState = &multisample_info;
   pipeline_info.pColorBlendState = &color_blend_info;
-  pipeline_info.pDynamicState = &dynamic_state;
+  pipeline_info.pDynamicState = &dyn_state_info;
   pipeline_info.layout = pipeline_layout;
   pipeline_info.renderPass = NULL;
   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
@@ -618,9 +606,7 @@ bool App::createGraphicsPipeline() {
   return true;
 }
 
-/*
-Drawing
-*/
+/* Drawing */
 bool App::createCommandPool() {
   VkCommandPoolCreateInfo pool_info = {};
   pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -699,15 +685,15 @@ bool App::recordCommandBuffer(uint32_t image_index) {
     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
-  VkClearValue clear_color;
-  clear_color.color = {0.0f, 0.0f, 0.0f, 1.0f};
+  VkClearValue clear_value;
+  clear_value.color = {0.0f, 0.0f, 0.0f, 1.0f};
   VkRenderingAttachmentInfo attachment_info = {};
   attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
   attachment_info.imageView = swapchain_image_views_[image_index],
   attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
   attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
   attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-  attachment_info.clearValue = clear_color;
+  attachment_info.clearValue = clear_value;
 
   VkRenderingInfo rendering_info = {};
   rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
