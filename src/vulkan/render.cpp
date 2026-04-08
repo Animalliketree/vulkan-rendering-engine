@@ -66,8 +66,8 @@ struct Vertex {
 
 const std::vector<Vertex> vertices = {
   {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-  {{0.0f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 };
 
 const char* kAppTitle = "Game";
@@ -466,6 +466,8 @@ bool App::recreateSwapchain() {
   device_.waitIdle();
 
   // Wipe current swapchain
+  for (vk::ImageView view : swapchain_image_views_)
+    device_.destroyImageView(view);
   swapchain_image_views_.clear();
 
   createSwapchain(swapchain_);
