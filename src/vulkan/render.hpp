@@ -20,13 +20,14 @@ class App {
   ~App();
 
   bool drawFrame();
+
   inline void flagResized() { framebuffer_resized_ = true; }
 
   inline void waitIdle() { vkDeviceWaitIdle(device_); }
 
 // Internal
  private:
-  // Initialisation
+  // Initialisation Variables
   SDL_Window* window_ = NULL;
   vk::Instance instance_;
   vk::PhysicalDevice physical_device_;
@@ -34,7 +35,7 @@ class App {
   uint32_t graphics_qf_idx_ = UINT32_MAX;
   vk::Queue graphics_queue_;
 
-  // Presentation
+  // Presentation Variables
   VkSurfaceKHR surface_;
   vk::SwapchainKHR swapchain_;
   std::vector<vk::Image> swapchain_images_;
@@ -43,18 +44,18 @@ class App {
   vk::Extent2D swapchain_extent_;
   bool framebuffer_resized_ = false;
 
-  // Graphics
+  // Graphics Variables
   vk::ShaderModule shader_module_;
   vk::Buffer vertex_buffer_;
   vk::DeviceMemory vertex_buffer_memory_;
   vk::PipelineLayout graphics_pipeline_layout_;
   vk::Pipeline graphics_pipeline_;
 
-  // Drawing
+  // Drawing Variables
   vk::CommandPool command_pool_;
   std::vector<vk::CommandBuffer> command_buffers_;
 
-  // Synchronisation
+  // Synchronisation Variables
   std::vector<vk::Semaphore> present_complete_semaphores_;
   std::vector<vk::Semaphore> render_finished_semaphores_;
   std::vector<vk::Fence> draw_fences_;
@@ -62,6 +63,7 @@ class App {
 
   quill::Logger* logger_;
 
+  // Initialisation Methods
   bool createWindow();
 
   bool checkValidationLayerSupport(char const* const* p_layers,
@@ -70,10 +72,11 @@ class App {
 
   bool selectPhysicalDevice();
 
-  uint32_t chooseQueueFamily();
+  uint32_t getQueueFamilyIndex(vk::PhysicalDevice device);
 
   bool createLogicalDevice();
 
+  // Presentation Methods
   vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
 
   vk::PresentModeKHR chooseSwapPresentMode();
@@ -86,11 +89,14 @@ class App {
 
   bool createImageViews();
 
+  // Graphics Methods
   vk::ShaderModule createShaderModule(const std::vector<char>& code);
 
   bool createVertexBuffer();
 
-  uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags prop_flags);
+  uint32_t findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags prop_flags);
+
+  vk::PipelineLayout createGraphicsPipelineLayout();
 
   bool createGraphicsPipeline();
 
@@ -98,6 +104,7 @@ class App {
 
   bool createCommandBuffers();
 
+  // Drawing Methods
   void transitionImageLayout(uint32_t image_index, vk::ImageLayout old_layout,
     vk::ImageLayout new_layout, vk::AccessFlags2 src_access_mask,
     vk::AccessFlags2 dst_access_mask, vk::PipelineStageFlags2 src_stage_mask,

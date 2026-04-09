@@ -25,7 +25,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
+#include <vulkan/vulkan_core.h>
 
 #ifndef VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 #define VK_EXT_DEBUG_REPORT_EXTENSION_NAME "VK_EXT_debug_report"
@@ -42,6 +42,10 @@ const std::vector<const char*> kRequiredDeviceExtensions = {
   VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
 };
 
+const char* kAppTitle = "Game";
+const char* kEngineTitle = "Hephaestus";
+constexpr uint32_t kWindowWidth = 800;
+constexpr uint32_t kWindowHeight = 600;
 constexpr uint32_t kMaxFramesInFlight = 2;
 
 #ifdef NDEBUG
@@ -70,12 +74,10 @@ const std::vector<Vertex> vertices = {
   {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 };
 
-const char* kAppTitle = "Game";
-const char* kEngineTitle = "Hephaestus";
-constexpr uint32_t kWindowWidth = 800;
-constexpr uint32_t kWindowHeight = 600;
-
 App::App(quill::Logger* logger) : logger_(logger) {
+  SDL_SetAppMetadata(kAppTitle, "0.0.1", "");
+  SDL_Init(SDL_INIT_VIDEO);
+
   createWindow();
   createInstance();
 
@@ -95,7 +97,7 @@ App::App(quill::Logger* logger) : logger_(logger) {
 }
 
 App::~App() {
-  for (VkFence fence : draw_fences_) vkDestroyFence(device_, fence, nullptr);
+  for (VkFence fence : draw_fences_) device_.destroyFence(fence, nullptr);
   for (VkSemaphore semaphore : present_complete_semaphores_)
       device_.destroySemaphore(semaphore, nullptr);
   for (VkSemaphore semaphore : render_finished_semaphores_)
@@ -111,15 +113,12 @@ App::~App() {
   device_.freeMemory(vertex_buffer_memory_);
   device_.destroy(nullptr);
   SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
-  vkDestroyInstance(instance_, nullptr);
+  instance_.destroy(nullptr);
   SDL_DestroyWindow(window_);
   SDL_Quit();
 }
 
 bool App::createWindow() {
-  SDL_SetAppMetadata(kAppTitle, "0.0.1", "");
-  SDL_Init(SDL_INIT_VIDEO);
-
   window_ = SDL_CreateWindow(kAppTitle, kWindowWidth, kWindowHeight,
                              SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
@@ -136,6 +135,8 @@ bool App::checkValidationLayerSupport(const char* const* layers,
   vk::Result result = vk::enumerateInstanceLayerProperties(&num_props, nullptr);
   std::vector<vk::LayerProperties> layer_props(num_props);
   result = vk::enumerateInstanceLayerProperties(&num_props, layer_props.data());
+  if (result != vk::Result::eSuccess) throw std::runtime_error(
+    "Failed to enumerate instance layer properties!");
 
   bool all_layers_available = true;
   for (uint32_t i = 0; i < num_layers; i++) {
@@ -163,9 +164,8 @@ bool App::createInstance() {
     required_layers.assign(kValidationLayers.begin(), kValidationLayers.end());
   }
 
-  bool validation_layers_supported = checkValidationLayerSupport(
-      required_layers.data(),
-      required_layers.size());
+  bool layers_supported = checkValidationLayerSupport(required_layers.data(),
+      static_cast<uint32_t>(required_layers.size()));
 
   // Handle extensions
   uint32_t num_instance_extensions;
@@ -177,19 +177,19 @@ bool App::createInstance() {
 
   uint32_t num_extensions;
   const char** extensions;
-  if (validation_layers_supported) {
+  if (layers_supported) {
     num_extensions = num_instance_extensions + 1;
     extensions = (const char**)(SDL_malloc(
         num_extensions * sizeof(const char*)));
     extensions[0] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
     SDL_memcpy(&extensions[1], instance_extensions,
-              num_instance_extensions * sizeof(const char*));
+               num_instance_extensions * sizeof(const char*));
   } else {
     num_extensions = num_instance_extensions;
     extensions = (const char**)(SDL_malloc(
         num_extensions * sizeof(const char*)));
     SDL_memcpy(&extensions[0], instance_extensions,
-              num_instance_extensions * sizeof(const char*));
+        num_instance_extensions * sizeof(const char*));
   }
 
   vk::ApplicationInfo app_info = {};
@@ -203,8 +203,7 @@ bool App::createInstance() {
   instance_info.pApplicationInfo = &app_info;
   instance_info.enabledExtensionCount = num_extensions;
   instance_info.ppEnabledExtensionNames = extensions;
-  instance_info.enabledLayerCount = static_cast<uint32_t>(
-      required_layers.size());
+  instance_info.enabledLayerCount = static_cast<uint32_t>(required_layers.size());
   instance_info.ppEnabledLayerNames = required_layers.data();
 
   vk::Result result = vk::createInstance(&instance_info, nullptr, &instance_);
@@ -215,64 +214,69 @@ bool App::createInstance() {
   return true;
 }
 
-bool App::selectPhysicalDevice() {
-  uint32_t num_devices;
-  vk::Result result = instance_.enumeratePhysicalDevices(&num_devices, nullptr);
-  if (num_devices == 0) {
-    throw std::runtime_error(
-        "No physical devices with Vulkan support available");
+bool evaluatePhysicalDeviceProperties(vk::PhysicalDevice device) {
+  vk::PhysicalDeviceProperties props;
+  device.getProperties(&props);
+  if (props.apiVersion < VK_API_VERSION_1_4) return false;
+  else return true;
+}
+
+uint32_t App::getQueueFamilyIndex(vk::PhysicalDevice device) {
+  std::vector<vk::QueueFamilyProperties> props = device.getQueueFamilyProperties();
+
+  bool supports_graphics = false;
+  for (uint32_t i = 0; i < props.size(); i++) {
+    supports_graphics = SDL_Vulkan_GetPresentationSupport(instance_, device, i);
+    if (supports_graphics) return i;
   }
 
+  quill::warning(logger_, "Failed to find a valid queue family");
+  return UINT32_MAX;
+}
+
+bool evaluateDeviceExtensions(vk::PhysicalDevice device, std::vector<const char*> target_extensions) {
+  uint32_t num_extensions;
+  vk::Result r = device.enumerateDeviceExtensionProperties(nullptr,
+                                                &num_extensions, nullptr);
+  std::vector<vk::ExtensionProperties> extensions(num_extensions);
+  r = device.enumerateDeviceExtensionProperties(nullptr, &num_extensions,
+                                                extensions.data());
+
+  bool extensions_available = true;
+  for (const char* extension : target_extensions) {
+    bool available = false;
+    for (vk::ExtensionProperties prop : extensions) {
+      if (strcmp(extension, prop.extensionName) == 0) {
+        available = true;
+        break;
+      }
+    }
+
+    if (!available) {
+      extensions_available = false;
+      break;
+    }
+  }
+
+  return extensions_available;
+}
+
+bool App::selectPhysicalDevice() {
+  uint32_t num_devices;
+  vk::Result r = instance_.enumeratePhysicalDevices(&num_devices, nullptr);
+  if (num_devices == 0 || r != vk::Result::eSuccess)
+      throw std::runtime_error(
+          "No physical devices with Vulkan support available");
+
   std::vector<vk::PhysicalDevice> devices(num_devices);
-  result = instance_.enumeratePhysicalDevices(&num_devices, devices.data());
+  r = instance_.enumeratePhysicalDevices(&num_devices, devices.data());
 
-  for (uint32_t i = 0; i < devices.size(); i++) {
-    vk::PhysicalDeviceProperties device_props;
-    devices[i].getProperties(&device_props);
-    if (device_props.apiVersion < VK_API_VERSION_1_4) continue;
+  for (vk::PhysicalDevice device : devices) {
+    if (!evaluatePhysicalDeviceProperties(device) ||
+        !evaluateDeviceExtensions(device, kRequiredDeviceExtensions)) continue;
 
-    uint32_t num_qf_props;
-    devices[i].getQueueFamilyProperties(&num_qf_props, nullptr);
-    std::vector<VkQueueFamilyProperties> qf_props(num_qf_props);
-
-    uint32_t graphics_qf_idx = 0;
-    bool supports_graphics = false;
-    for (uint32_t j = 0; j < qf_props.size(); j++) {
-      if (SDL_Vulkan_GetPresentationSupport(instance_, devices[i], j)) {
-        supports_graphics = true;
-        graphics_qf_idx = j;
-        break;
-      }
-    }
-
-    if (!supports_graphics) continue;
-
-    uint32_t num_extensions;
-    result = devices[i].enumerateDeviceExtensionProperties(nullptr,
-                                                           &num_extensions, nullptr);
-    std::vector<vk::ExtensionProperties> extensions(num_extensions);
-    result = devices[i].enumerateDeviceExtensionProperties(nullptr,
-                                                           &num_extensions,
-                                                           extensions.data());
-
-    bool req_extensions_available = true;
-    for (const char* extension : kRequiredDeviceExtensions) {
-      bool extension_available = false;
-      for (vk::ExtensionProperties prop : extensions) {
-        if (strcmp(extension, prop.extensionName) == 0) {
-          extension_available = true;
-          break;
-        }
-      }
-
-      if (!extension_available) {
-        req_extensions_available = false;
-        break;
-      }
-    }
-
-    if (!req_extensions_available) continue;
-
+    uint32_t graphics_qf_idx = getQueueFamilyIndex(device);
+    if (graphics_qf_idx == UINT32_MAX) continue;
 
     vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_features;
     vk::PhysicalDeviceVulkan13Features vk_1_3_features;
@@ -280,11 +284,11 @@ bool App::selectPhysicalDevice() {
 
     vk::PhysicalDeviceFeatures2 features;
     features.pNext = &vk_1_3_features;
-    devices[i].getFeatures2(&features);
+    device.getFeatures2(&features);
     if (dynamic_state_features.extendedDynamicState == VK_FALSE
         || vk_1_3_features.dynamicRendering == VK_FALSE) continue;
 
-    physical_device_ = devices[i];
+    physical_device_ = device;
     graphics_qf_idx_ = graphics_qf_idx;
     return true;
   }
@@ -292,18 +296,8 @@ bool App::selectPhysicalDevice() {
   throw std::runtime_error("Failed to find a suitable Vulkan physical device");
 }
 
-uint32_t App::chooseQueueFamily() {
-  std::vector<vk::QueueFamilyProperties> props = physical_device_.getQueueFamilyProperties();
-
-  for (uint32_t i = 0; i < props.size(); i++) {
-    if (!!(props[i].queueFlags & vk::QueueFlagBits::eGraphics)) return i;
-  }
-
-  throw std::runtime_error("No graphics queue family available!");
-}
-
 bool App::createLogicalDevice() {
-  graphics_qf_idx_ = chooseQueueFamily();
+  graphics_qf_idx_ = getQueueFamilyIndex(physical_device_);
   constexpr float kQueuePriority = 0.5f;
   vk::DeviceQueueCreateInfo queue_info = {};
   queue_info.queueCount = 1;
@@ -330,9 +324,9 @@ bool App::createLogicalDevice() {
   device_info.ppEnabledExtensionNames =
       kRequiredDeviceExtensions.data();
 
-  vk::Result result = physical_device_.createDevice(&device_info, nullptr,
-                                   &device_);
-  if (result != vk::Result::eSuccess) throw std::runtime_error(
+  vk::Result r = physical_device_.createDevice(&device_info, nullptr,
+                                               &device_);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
       "Failed to create logical device!");
 
   device_.getQueue(graphics_qf_idx_, 0, &graphics_queue_);
@@ -345,9 +339,14 @@ vk::SurfaceFormatKHR App::chooseSwapSurfaceFormat() {
   uint32_t num_formats;
   vk::Result r = physical_device_.getSurfaceFormatsKHR(surface_, &num_formats,
                                                        nullptr);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
+    "Failed to get surface formats!");
+
   std::vector<vk::SurfaceFormatKHR> formats(num_formats);
   r = physical_device_.getSurfaceFormatsKHR(surface_,
                                             &num_formats, formats.data());
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
+    "Failed to get surface formats!");
 
   assert(num_formats > 0);
   vk::Format desired_format = vk::Format::eB8G8R8A8Srgb;
@@ -361,9 +360,14 @@ vk::PresentModeKHR App::chooseSwapPresentMode() {
   uint32_t num_modes;
   vk::Result r = physical_device_.getSurfacePresentModesKHR(surface_,
                                                             &num_modes, nullptr);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
+    "Failed to get surface present modes!");
+
   std::vector<vk::PresentModeKHR> modes(num_modes);
   r = physical_device_.getSurfacePresentModesKHR(surface_, &num_modes,
                                                  modes.data());
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
+    "Failed to get surface present modes!");
 
   assert(num_modes > 0);
   vk::PresentModeKHR desired_mode = vk::PresentModeKHR::eMailbox;
@@ -387,8 +391,10 @@ vk::Extent2D App::chooseSwapExtent(vk::SurfaceCapabilitiesKHR capabilities) {
 
 bool App::createSwapchain(vk::SwapchainKHR old_swapchain) {
   vk::SurfaceCapabilitiesKHR capabilities;
-  vk::Result result = physical_device_.getSurfaceCapabilitiesKHR(surface_,
+  vk::Result r = physical_device_.getSurfaceCapabilitiesKHR(surface_,
       &capabilities);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
+      "Failed to get surface capabilities!");
 
   vk::Extent2D extent = chooseSwapExtent(capabilities);
 
@@ -413,16 +419,16 @@ bool App::createSwapchain(vk::SwapchainKHR old_swapchain) {
   swapchain_info.clipped = true;
   swapchain_info.oldSwapchain = old_swapchain;
 
-  result = device_.createSwapchainKHR(&swapchain_info, nullptr, &swapchain_);
-  if (result != vk::Result::eSuccess) throw std::runtime_error(
+  r = device_.createSwapchainKHR(&swapchain_info, nullptr, &swapchain_);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
       "Failed to create swapchain!");
 
   device_.destroySwapchainKHR(old_swapchain, nullptr);
 
   uint32_t num_images;
-  result = device_.getSwapchainImagesKHR(swapchain_, &num_images, nullptr);
+  r = device_.getSwapchainImagesKHR(swapchain_, &num_images, nullptr);
   swapchain_images_.resize(num_images);
-  result = device_.getSwapchainImagesKHR(swapchain_, &num_images,
+  r = device_.getSwapchainImagesKHR(swapchain_, &num_images,
                           swapchain_images_.data());
 
   swapchain_format_ = format;
@@ -450,8 +456,10 @@ bool App::createImageViews() {
   for (uint32_t i = 0; i < swapchain_images_.size(); i++) {
     view_info.image = swapchain_images_[i];
 
-    vk::Result result = device_.createImageView(&view_info, nullptr,
+    vk::Result r = device_.createImageView(&view_info, nullptr,
                                                 &swapchain_image_views_[i]);
+    if (r != vk::Result::eSuccess) throw std::runtime_error(
+      "Failed to create image views!");
   }
 
   return true;
@@ -460,7 +468,7 @@ bool App::createImageViews() {
 bool App::recreateSwapchain() {
   SDL_WindowFlags flags = SDL_GetWindowFlags(window_);
   while ((flags & SDL_WINDOW_MINIMIZED) != 0) {
-    SDL_WindowFlags flags = SDL_GetWindowFlags(window_);
+    flags = SDL_GetWindowFlags(window_);
     SDL_WaitEvent(nullptr);
   }
   device_.waitIdle();
@@ -498,8 +506,8 @@ vk::ShaderModule App::createShaderModule(const std::vector<char>& code) {
   module_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
   vk::ShaderModule module;
-  vk::Result result = device_.createShaderModule(&module_info, nullptr, &module);
-  if (result != vk::Result::eSuccess) throw std::runtime_error(
+  vk::Result r = device_.createShaderModule(&module_info, nullptr, &module);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
       "Failed to create shader module!");
   return module;
 }
@@ -511,9 +519,10 @@ bool App::createVertexBuffer() {
   buffer_info.size = sizeof(vertices[0]) * vertices.size();
   buffer_info.usage = vk::BufferUsageFlagBits::eVertexBuffer;
   buffer_info.sharingMode = vk::SharingMode::eExclusive;
-  vk::Result result = device_.createBuffer(&buffer_info, nullptr, &vertex_buffer_);
-  if (result != vk::Result::eSuccess) throw std::runtime_error(
+  vk::Result r = device_.createBuffer(&buffer_info, nullptr, &vertex_buffer_);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
       "Failed to create vertex buffer!");
+
   vk::MemoryRequirements mem_req;
   device_.getBufferMemoryRequirements(vertex_buffer_, &mem_req);
 
@@ -523,28 +532,45 @@ bool App::createVertexBuffer() {
       vk::MemoryPropertyFlagBits::eHostVisible
       | vk::MemoryPropertyFlagBits::eHostCoherent);
   
-  result = device_.allocateMemory(&mem_alloc_info, nullptr, &vertex_buffer_memory_);
-  if (result != vk::Result::eSuccess) throw std::runtime_error(
+  r = device_.allocateMemory(&mem_alloc_info, nullptr, &vertex_buffer_memory_);
+  if (r != vk::Result::eSuccess) throw std::runtime_error(
       "Failed to allocate memory for vertex buffer!");
+
   device_.bindBufferMemory(vertex_buffer_, vertex_buffer_memory_, 0);
 
   void* data = device_.mapMemory(vertex_buffer_memory_, 0, buffer_info.size);
   memcpy(data, vertices.data(), buffer_info.size);
   device_.unmapMemory(vertex_buffer_memory_);
+
   return true;
 }
 
-uint32_t App::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags prop_flags) {
+uint32_t App::findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags prop_flags) {
   assert(physical_device_ != nullptr);
 
   vk::PhysicalDeviceMemoryProperties mem_props;
   physical_device_.getMemoryProperties(&mem_props);
 
   for (uint32_t i = 0; i < mem_props.memoryTypeCount; i++) {
-    if (typeFilter & (1 << i) && (mem_props.memoryTypes[i].propertyFlags & prop_flags) == prop_flags) return i;
+    if (type_filter & (1 << i) &&
+        (mem_props.memoryTypes[i].propertyFlags & prop_flags) == prop_flags)
+      return i;
   }
 
   throw std::runtime_error("Failed to find suitable memory type!");
+}
+
+vk::PipelineLayout App::createGraphicsPipelineLayout() {
+  vk::PipelineLayout layout;
+  vk::PipelineLayoutCreateInfo layout_info = {};
+  layout_info.setLayoutCount = 0;
+  layout_info.pushConstantRangeCount = 0;
+
+  vk::Result result = device_.createPipelineLayout(&layout_info, nullptr,
+                                                   &layout);
+  if (result != vk::Result::eSuccess) throw std::runtime_error(
+      "Failed to create pipeline layout!");
+  return layout;
 }
 
 bool App::createGraphicsPipeline() {
@@ -628,15 +654,7 @@ bool App::createGraphicsPipeline() {
   color_blend_info.attachmentCount = 1;
   color_blend_info.pAttachments = &color_blend_attach;
 
-  vk::PipelineLayout pipeline_layout;
-  vk::PipelineLayoutCreateInfo pipeline_layout_info = {};
-  pipeline_layout_info.setLayoutCount = 0;
-  pipeline_layout_info.pushConstantRangeCount = 0;
-
-  vk::Result result = device_.createPipelineLayout(&pipeline_layout_info,
-                                                   nullptr, &pipeline_layout);
-  if (result != vk::Result::eSuccess) throw std::runtime_error(
-      "Failed to create pipeline layout!");
+  vk::PipelineLayout pipeline_layout = createGraphicsPipelineLayout();
 
   vk::PipelineRenderingCreateInfo rendering_info = {};
   rendering_info.colorAttachmentCount = 1;
@@ -658,7 +676,7 @@ bool App::createGraphicsPipeline() {
   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
   pipeline_info.basePipelineIndex = -1;
 
-  result = device_.createGraphicsPipelines(nullptr, 1, &pipeline_info, nullptr,
+  vk::Result result = device_.createGraphicsPipelines(nullptr, 1, &pipeline_info, nullptr,
                                            &graphics_pipeline_);
   if (result != vk::Result::eSuccess) throw std::runtime_error(
       "Failed to create pipeline!");
@@ -731,6 +749,8 @@ bool App::recordCommandBuffer(uint32_t image_index) {
   begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
   vk::Result result = command_buffers_[frame_index_].begin(&begin_info);
+  if (result != vk::Result::eSuccess) throw std::runtime_error(
+    "Failed to begin command buffer!");
 
   transitionImageLayout(
     image_index,
@@ -762,8 +782,7 @@ bool App::recordCommandBuffer(uint32_t image_index) {
   vk::DeviceSize vertex_buffer_offsets[] = {0};
   command_buffers_[frame_index_].bindVertexBuffers(0, 1, &vertex_buffer_, vertex_buffer_offsets);
 
-  vk::Viewport viewport = {
-    0.0f, 0.0f,
+  vk::Viewport viewport = {0.0f, 0.0f,
     static_cast<float>(swapchain_extent_.width),
     static_cast<float>(swapchain_extent_.height),
     0.0f, 1.0f
@@ -771,7 +790,7 @@ bool App::recordCommandBuffer(uint32_t image_index) {
   vk::Rect2D scissor = {vk::Offset2D{0, 0}, swapchain_extent_};
   command_buffers_[frame_index_].setViewport(0, 1, &viewport);
   command_buffers_[frame_index_].setScissor(0, 1, &scissor);
-  command_buffers_[frame_index_].draw(vertices.size(), 1, 0, 0);
+  command_buffers_[frame_index_].draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
   command_buffers_[frame_index_].endRendering();
 
   transitionImageLayout(
@@ -800,6 +819,8 @@ bool App::createSyncObjects() {
   for (size_t i = 0; i < swapchain_images_.size(); i++) {
     vk::Result r = device_.createSemaphore(&semaphore_info, nullptr,
                       &render_finished_semaphores_[i]);
+    if (r != vk::Result::eSuccess) throw std::runtime_error(
+      "Failed to create semaphores!");
   }
 
   present_complete_semaphores_.resize(kMaxFramesInFlight);
@@ -807,7 +828,11 @@ bool App::createSyncObjects() {
   for (size_t i = 0; i < kMaxFramesInFlight; i++) {
     vk::Result r = device_.createSemaphore(&semaphore_info, nullptr,
                       &present_complete_semaphores_[i]);
+    if (r != vk::Result::eSuccess) throw std::runtime_error(
+      "Failed to create semaphores!");
     r = device_.createFence(&fence_info, nullptr, &draw_fences_[i]);
+    if (r != vk::Result::eSuccess) throw std::runtime_error(
+      "Failed to create fences!");
   }
 
   return true;
