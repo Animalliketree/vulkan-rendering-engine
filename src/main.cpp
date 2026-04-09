@@ -12,7 +12,7 @@ int main() {
     quill::Logger* logger = quill::simple_logger();
 
     try {
-        App app(logger);
+        Renderer app(logger);
 
         bool done = false;
         while (!done) {
@@ -31,8 +31,6 @@ int main() {
 
             app.drawFrame();
         }
-
-        app.waitIdle();
     } catch (const std::exception& e) {
         quill::error(logger, e.what());
         return 1;
