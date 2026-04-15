@@ -31,6 +31,8 @@
 #define VK_EXT_DEBUG_REPORT_EXTENSION_NAME "VK_EXT_debug_report"
 #endif
 
+constexpr char kShaderFile[] = "/home/arboivin/alix-baque/maison/projets/voxel-engine/appdata/slang.spv";
+
 const std::vector<char const*> kValidationLayers = {
   "VK_LAYER_KHRONOS_validation"
 };
@@ -575,7 +577,7 @@ vk::PipelineLayout App::createGraphicsPipelineLayout() {
 
 bool App::createGraphicsPipeline() {
   // Shader Stages
-  shader_module_ = createShaderModule(readFile("shaders/slang.spv"));
+  shader_module_ = createShaderModule(readFile(kShaderFile));
 
   vk::PipelineShaderStageCreateInfo vert_stage_info = {};
   vert_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
