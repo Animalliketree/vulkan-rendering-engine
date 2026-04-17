@@ -14,6 +14,20 @@
 #include <cstdint>
 #include <vector>
 
+struct BufferHandle {
+    vk::Buffer buffer;
+    vk::DeviceSize offset;
+    vk::DeviceMemory memory;
+};
+
+struct SwapchainHandle {
+    vk::SwapchainKHR swapchain;
+    std::vector<vk::Image> images;
+    std::vector<vk::ImageView> image_views;
+    vk::SurfaceFormatKHR format;
+    vk::Extent2D extent;
+};
+
 class VulkanRenderer {
   public:
     explicit VulkanRenderer(SDL_Window* window);
@@ -23,45 +37,20 @@ class VulkanRenderer {
 
     bool drawFrame();
 
-// Internal
   private:
-    vk::Instance instance_;
-    vk::PhysicalDevice physical_device_;
-    vk::Device device_;
-    uint32_t graphics_qf_idx_ = UINT32_MAX;
-    vk::Queue graphics_queue_;
-    VkSurfaceKHR surface_;
-    vk::SwapchainKHR swapchain_;
-    std::vector<vk::Image> swapchain_images_;
-    std::vector<vk::ImageView> swapchain_image_views_;
-    vk::SurfaceFormatKHR swapchain_format_;
-    vk::Extent2D swapchain_extent_;
-    vk::ShaderModule shader_module_;
-    vk::Buffer vertex_buffer_;
-    vk::DeviceMemory vertex_buffer_memory_;
-    vk::PipelineLayout graphics_pipeline_layout_;
-    vk::Pipeline graphics_pipeline_;
-    vk::CommandPool command_pool_;
-    std::vector<vk::CommandBuffer> command_buffers_;
-    std::vector<vk::Semaphore> present_complete_semaphores_;
-    std::vector<vk::Semaphore> render_finished_semaphores_;
-    std::vector<vk::Fence> draw_fences_;
-    uint32_t frame_index_ = 0;
-    bool framebuffer_resized_ = false;
+    void createInstance();
 
-    bool createInstance();
-
-    bool selectPhysicalDevice();
+    void selectPhysicalDevice();
 
     uint32_t getQueueFamilyIndex(vk::PhysicalDevice device);
 
-    bool createLogicalDevice();
+    void createLogicalDevice();
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
 
     vk::PresentModeKHR chooseSwapPresentMode();
 
-    bool createSwapchain(vk::SwapchainKHR old_swapchain);
+    void createSwapchain(vk::SwapchainKHR old_swapchain);
 
     bool recreateSwapchain();
 
@@ -90,6 +79,27 @@ class VulkanRenderer {
     bool recordCommandBuffer(uint32_t image_index);
 
     bool createSyncObjects();
+
+    vk::Instance instance_;
+    vk::PhysicalDevice physical_device_;
+    vk::Device device_;
+    uint32_t graphics_qf_idx_ = UINT32_MAX;
+    vk::Queue graphics_queue_;
+    VkSurfaceKHR surface_;
+    SwapchainHandle swapchain_;
+
+    vk::ShaderModule shader_module_;
+    BufferHandle vertex_buffer_;
+    vk::PipelineLayout graphics_pipeline_layout_;
+    vk::Pipeline graphics_pipeline_;
+    vk::CommandPool command_pool_;
+    std::vector<vk::CommandBuffer> command_buffers_;
+    std::vector<vk::Semaphore> present_complete_semaphores_;
+    std::vector<vk::Semaphore> render_finished_semaphores_;
+    std::vector<vk::Fence> draw_fences_;
+
+    uint32_t frame_index_ = 0;
+    bool framebuffer_resized_ = false;
 };
 
 #endif  // SRC_VULKAN_RENDER_HPP_
