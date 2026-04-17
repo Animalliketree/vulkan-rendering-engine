@@ -6,25 +6,22 @@
 
 #include <exception>
 
-#include "src/vulkan/render.hpp"
+#include "src/app.hpp"
 
 int main() {
     quill::Logger* logger = quill::simple_logger();
 
     try {
-        App app(logger);
+        App app;
 
         bool done = false;
         while (!done) {
             SDL_Event event;
 
-            while (SDL_PollEvent(&event)) {
+            while (app.pollEvent(event)) {
                 switch (event.type) {
                     case SDL_EVENT_QUIT:
                         done = true;
-                        break;
-                    case SDL_EVENT_WINDOW_RESIZED:
-                        app.flagResized();
                         break;
                     default:
                         break;

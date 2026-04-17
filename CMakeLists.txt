@@ -16,11 +16,11 @@ target_compile_options(VoxelEngine PRIVATE -Wall -Wextra -Wfloat-equal -Wundef
 
 find_package(quill REQUIRED)
 
-find_library(Rendering ${PROJECT_SOURCE_DIR}/src/rendering)
+find_library(App src)
 target_link_libraries(VoxelEngine
     PRIVATE
         SDL3
-        Rendering
+        App
 )
 
 include(CTest)

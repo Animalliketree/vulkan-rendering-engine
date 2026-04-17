@@ -1,5 +1,5 @@
-add_library(Rendering)
-target_sources(Rendering
+add_library(VulkanRenderer)
+target_sources(VulkanRenderer
     PRIVATE
         render.cpp
 
@@ -9,14 +9,18 @@ target_sources(Rendering
             render.hpp
 )
 
-target_compile_options(Rendering PRIVATE -Wall -Wextra -Wfloat-equal -Wundef
-                       -Wshadow -Wpointer-arith -Wcast-align
-                       -Wstrict-overflow=5 -Wwrite-strings -Wcast-qual -Wswitch-default
-                       -Wconversion -Wunreachable-code)
+target_compile_options(VulkanRenderer
+    PRIVATE
+        -Wall -Wextra -Wfloat-equal -Wundef
+        -Wshadow -Wpointer-arith -Wcast-align
+        -Wstrict-overflow=5 -Wwrite-strings -Wcast-qual -Wswitch-default
+        -Wconversion -Wunreachable-code
+        
+    PUBLIC
+        -std=c++20)
 
 find_package(quill REQUIRED)
-find_library(ReadFile ${PROJECT_SOURCE_DIR}/lib/lib-readfile)
-target_link_libraries(Rendering
+target_link_libraries(VulkanRenderer
     PUBLIC
         ReadFile
         SDL3

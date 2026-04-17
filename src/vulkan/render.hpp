@@ -14,105 +14,82 @@
 #include <cstdint>
 #include <vector>
 
-class App {
- public:
-  explicit App(quill::Logger* logger);
-  ~App();
+class VulkanRenderer {
+  public:
+    explicit VulkanRenderer(SDL_Window* window);
+    ~VulkanRenderer();
 
-  bool drawFrame();
+    inline void flagResized() { framebuffer_resized_ = true; }
 
-  inline void flagResized() { framebuffer_resized_ = true; }
-
-  inline void waitIdle() { vkDeviceWaitIdle(device_); }
+    bool drawFrame();
 
 // Internal
- private:
-  // Initialisation Variables
-  SDL_Window* window_ = NULL;
-  vk::Instance instance_;
-  vk::PhysicalDevice physical_device_;
-  vk::Device device_;
-  uint32_t graphics_qf_idx_ = UINT32_MAX;
-  vk::Queue graphics_queue_;
+  private:
+    vk::Instance instance_;
+    vk::PhysicalDevice physical_device_;
+    vk::Device device_;
+    uint32_t graphics_qf_idx_ = UINT32_MAX;
+    vk::Queue graphics_queue_;
+    VkSurfaceKHR surface_;
+    vk::SwapchainKHR swapchain_;
+    std::vector<vk::Image> swapchain_images_;
+    std::vector<vk::ImageView> swapchain_image_views_;
+    vk::SurfaceFormatKHR swapchain_format_;
+    vk::Extent2D swapchain_extent_;
+    vk::ShaderModule shader_module_;
+    vk::Buffer vertex_buffer_;
+    vk::DeviceMemory vertex_buffer_memory_;
+    vk::PipelineLayout graphics_pipeline_layout_;
+    vk::Pipeline graphics_pipeline_;
+    vk::CommandPool command_pool_;
+    std::vector<vk::CommandBuffer> command_buffers_;
+    std::vector<vk::Semaphore> present_complete_semaphores_;
+    std::vector<vk::Semaphore> render_finished_semaphores_;
+    std::vector<vk::Fence> draw_fences_;
+    uint32_t frame_index_ = 0;
+    bool framebuffer_resized_ = false;
 
-  // Presentation Variables
-  VkSurfaceKHR surface_;
-  vk::SwapchainKHR swapchain_;
-  std::vector<vk::Image> swapchain_images_;
-  std::vector<vk::ImageView> swapchain_image_views_;
-  vk::SurfaceFormatKHR swapchain_format_;
-  vk::Extent2D swapchain_extent_;
-  bool framebuffer_resized_ = false;
+    bool createInstance();
 
-  // Graphics Variables
-  vk::ShaderModule shader_module_;
-  vk::Buffer vertex_buffer_;
-  vk::DeviceMemory vertex_buffer_memory_;
-  vk::PipelineLayout graphics_pipeline_layout_;
-  vk::Pipeline graphics_pipeline_;
+    bool selectPhysicalDevice();
 
-  // Drawing Variables
-  vk::CommandPool command_pool_;
-  std::vector<vk::CommandBuffer> command_buffers_;
+    uint32_t getQueueFamilyIndex(vk::PhysicalDevice device);
 
-  // Synchronisation Variables
-  std::vector<vk::Semaphore> present_complete_semaphores_;
-  std::vector<vk::Semaphore> render_finished_semaphores_;
-  std::vector<vk::Fence> draw_fences_;
-  uint32_t frame_index_ = 0;
+    bool createLogicalDevice();
 
-  quill::Logger* logger_;
+    vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
 
-  // Initialisation Methods
-  bool createWindow();
+    vk::PresentModeKHR chooseSwapPresentMode();
 
-  bool checkValidationLayerSupport(char const* const* p_layers,
-                                   uint32_t num_layers);
-  bool createInstance();
+    bool createSwapchain(vk::SwapchainKHR old_swapchain);
 
-  bool selectPhysicalDevice();
+    bool recreateSwapchain();
 
-  uint32_t getQueueFamilyIndex(vk::PhysicalDevice device);
+    bool createImageViews();
 
-  bool createLogicalDevice();
+    vk::ShaderModule createShaderModule(const std::vector<char>& code);
 
-  // Presentation Methods
-  vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
+    bool createVertexBuffer();
 
-  vk::PresentModeKHR chooseSwapPresentMode();
+    uint32_t findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags prop_flags);
 
-  vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR surface_capabilities);
+    vk::PipelineLayout createGraphicsPipelineLayout();
 
-  bool createSwapchain(vk::SwapchainKHR old_swapchain);
+    bool createGraphicsPipeline();
 
-  bool recreateSwapchain();
+    void createCommandPool();
 
-  bool createImageViews();
+    void createCommandBuffers();
 
-  // Graphics Methods
-  vk::ShaderModule createShaderModule(const std::vector<char>& code);
+    // Drawing Methods
+    void transitionImageLayout(uint32_t image_index, vk::ImageLayout old_layout,
+        vk::ImageLayout new_layout, vk::AccessFlags2 src_access_mask,
+        vk::AccessFlags2 dst_access_mask, vk::PipelineStageFlags2 src_stage_mask,
+        vk::PipelineStageFlags2 dst_stage_mask);
 
-  bool createVertexBuffer();
+    bool recordCommandBuffer(uint32_t image_index);
 
-  uint32_t findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags prop_flags);
-
-  vk::PipelineLayout createGraphicsPipelineLayout();
-
-  bool createGraphicsPipeline();
-
-  bool createCommandPool();
-
-  bool createCommandBuffers();
-
-  // Drawing Methods
-  void transitionImageLayout(uint32_t image_index, vk::ImageLayout old_layout,
-    vk::ImageLayout new_layout, vk::AccessFlags2 src_access_mask,
-    vk::AccessFlags2 dst_access_mask, vk::PipelineStageFlags2 src_stage_mask,
-    vk::PipelineStageFlags2 dst_stage_mask);
-
-  bool recordCommandBuffer(uint32_t image_index);
-
-  bool createSyncObjects();
+    bool createSyncObjects();
 };
 
 #endif  // SRC_VULKAN_RENDER_HPP_
