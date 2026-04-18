@@ -1,15 +1,15 @@
-add_library(VulkanRenderer)
-target_sources(VulkanRenderer
+add_library(Graphics)
+target_sources(Graphics
     PRIVATE
-        render.cpp
+        vulkan_renderer.cpp
 
     PUBLIC
         FILE_SET HEADERS
         FILES
-            render.hpp
+            vulkan_renderer.hpp
 )
 
-target_compile_options(VulkanRenderer
+target_compile_options(Graphics
     PRIVATE
         -Wall -Wextra -Wfloat-equal -Wundef
         -Wshadow -Wpointer-arith -Wcast-align
@@ -20,7 +20,7 @@ target_compile_options(VulkanRenderer
         -std=c++20)
 
 find_package(quill REQUIRED)
-target_link_libraries(VulkanRenderer
+target_link_libraries(Graphics
     PUBLIC
         ReadFile
         SDL3

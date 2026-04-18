@@ -1,7 +1,6 @@
-#include "render.hpp"
+#include "vulkan_renderer.hpp"
 #include "vulkan/vulkan.hpp"
 
-#include <array>
 #include <fcntl.h>
 #include <quill/LogFunctions.h>
 #include <quill/Logger.h>
@@ -14,6 +13,7 @@
 
 #include <glm/glm.hpp>
 
+#include <array>
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -22,7 +22,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 
 #ifndef VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 #define VK_EXT_DEBUG_REPORT_EXTENSION_NAME "VK_EXT_debug_report"
@@ -201,6 +200,7 @@ std::vector<char> readFile(std::string file_name) {
 }
 }  // namespace
 
+namespace graphics::vk_renderer {
 VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
     assert(window != nullptr);
 
@@ -216,9 +216,9 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
 
     createSwapchain(nullptr);
     createImageViews();
+    createCommandPool();
     createVertexBuffer();
     createGraphicsPipeline();
-    createCommandPool();
     createCommandBuffers();
     createSyncObjects();
 }
@@ -244,7 +244,6 @@ VulkanRenderer::~VulkanRenderer() {
     instance_.destroy();
 }
 
-/* Initialise Vulkan */
 void VulkanRenderer::createInstance() {
     bool layers_supported = validationLayersSupported();
 
@@ -405,7 +404,7 @@ void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) {
     swapchain_.images = device_.getSwapchainImagesKHR(swapchain_.swapchain);
 }
 
-bool VulkanRenderer::createImageViews() {
+void VulkanRenderer::createImageViews() {
     assert(device_ != nullptr && swapchain_.image_views.empty());
 
     vk::ImageViewCreateInfo view_info = {};
@@ -427,11 +426,9 @@ bool VulkanRenderer::createImageViews() {
         swapchain_.image_views[i] = device_.createImageView(view_info);
         assert(swapchain_.image_views[i] != nullptr);
     }
-
-    return true;
 }
 
-bool VulkanRenderer::recreateSwapchain() {
+void VulkanRenderer::recreateSwapchain() {
     assert(device_ != nullptr);
 
     device_.waitIdle();
@@ -442,12 +439,10 @@ bool VulkanRenderer::recreateSwapchain() {
 
     createSwapchain(swapchain_.swapchain);
     createImageViews();
-
-    return true;
 }
 
-/* Graphics pipeline */
-vk::ShaderModule VulkanRenderer::createShaderModule(const std::vector<char>& code) {
+vk::ShaderModule
+VulkanRenderer::createShaderModule(const std::vector<char>& code) {
     assert(device_ != nullptr);
 
     vk::ShaderModuleCreateInfo module_info = {};
@@ -460,39 +455,78 @@ vk::ShaderModule VulkanRenderer::createShaderModule(const std::vector<char>& cod
     return module;
 }
 
-bool VulkanRenderer::createVertexBuffer() {
-  assert(device_ != nullptr);
+BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
+                                          const vk::MemoryPropertyFlags props,
+                                          const vk::BufferUsageFlags usage) {
+    BufferHandle buf;
+    vk::BufferCreateInfo buf_info;
+    buf_info.size = size;
+    buf_info.usage = usage;
+    buf_info.sharingMode = vk::SharingMode::eExclusive;
+    buf.buffer = device_.createBuffer(buf_info);
 
-  vk::BufferCreateInfo buffer_info = {};
-  buffer_info.size = sizeof(vertices[0]) * vertices.size();
-  buffer_info.usage = vk::BufferUsageFlagBits::eVertexBuffer;
-  buffer_info.sharingMode = vk::SharingMode::eExclusive;
-  vertex_buffer_.buffer = device_.createBuffer(buffer_info, nullptr);
-  assert(vertex_buffer_.buffer != nullptr);
+    vk::MemoryRequirements mem_req = device_.getBufferMemoryRequirements(buf.buffer);
 
-  vk::MemoryRequirements mem_req = device_.getBufferMemoryRequirements(vertex_buffer_.buffer);
+    vk::MemoryAllocateInfo alloc_info;
+    alloc_info.allocationSize = mem_req.size;
+    alloc_info.memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits, props);
+    buf.memory = device_.allocateMemory(alloc_info);
 
-  vk::MemoryAllocateInfo mem_alloc_info = {};
-  mem_alloc_info.allocationSize = mem_req.size;
-  mem_alloc_info.memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits,
-      vk::MemoryPropertyFlagBits::eHostVisible
-      | vk::MemoryPropertyFlagBits::eHostCoherent);
-  
-  vertex_buffer_.memory = device_.allocateMemory(mem_alloc_info);
-  assert(vertex_buffer_.memory != nullptr);
-
-  vertex_buffer_.offset = 0;
-  device_.bindBufferMemory(vertex_buffer_.buffer, vertex_buffer_.memory,
-                           vertex_buffer_.offset);
-
-  void* data = device_.mapMemory(vertex_buffer_.memory, 0, buffer_info.size);
-  memcpy(data, vertices.data(), buffer_info.size);
-  device_.unmapMemory(vertex_buffer_.memory);
-
-  return true;
+    buf.offset = 0;
+    device_.bindBufferMemory(buf.buffer, buf.memory, buf.offset);
+    return buf;
 }
 
-uint32_t VulkanRenderer::findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags prop_flags) {
+void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
+                                const vk::DeviceSize buffer_size) {
+    assert(device_ != nullptr && buffer_size > 0);
+
+    vk::CommandBufferAllocateInfo alloc_info;
+    alloc_info.commandPool = command_pool_;
+    alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    alloc_info.commandBufferCount = 1;
+
+    vk::CommandBuffer copy_buf = device_.allocateCommandBuffers(alloc_info)[0];
+
+    vk::CommandBufferBeginInfo begin_info;
+    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    copy_buf.begin(begin_info);
+
+    copy_buf.copyBuffer(src, dst, vk::BufferCopy(0, 0, buffer_size));
+    copy_buf.end();
+
+    vk::SubmitInfo submit_info;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &copy_buf;
+    graphics_queue_.submit(submit_info);
+    graphics_queue_.waitIdle();
+}
+
+void VulkanRenderer::createVertexBuffer() {
+    assert(device_ != nullptr);
+
+    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+
+    vk::MemoryPropertyFlags flags = vk::MemoryPropertyFlagBits::eHostVisible
+        | vk::MemoryPropertyFlagBits::eHostCoherent;
+
+    BufferHandle staging_buf = createBuffer(buffer_size, flags,
+                                            vk::BufferUsageFlagBits::eTransferSrc);
+    vertex_buffer_ = createBuffer(buffer_size, vk::MemoryPropertyFlagBits::eDeviceLocal,
+                                  vk::BufferUsageFlagBits::eVertexBuffer
+                                  | vk::BufferUsageFlagBits::eTransferDst);
+
+    void* data = device_.mapMemory(staging_buf.memory, 0, buffer_size);
+    memcpy(data, vertices.data(), buffer_size);
+    device_.unmapMemory(staging_buf.memory);
+
+    copyBuffer(staging_buf.buffer, vertex_buffer_.buffer, buffer_size);
+    device_.destroyBuffer(staging_buf.buffer);
+    device_.freeMemory(staging_buf.memory);
+}
+
+uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
+                                        const vk::MemoryPropertyFlags prop_flags) {
   assert(physical_device_ != nullptr);
 
   vk::PhysicalDeviceMemoryProperties props = physical_device_.getMemoryProperties();
@@ -627,7 +661,6 @@ bool VulkanRenderer::createGraphicsPipeline() {
     return true;
 }
 
-/* Drawing */
 void VulkanRenderer::createCommandPool() {
     assert(device_ != nullptr);
 
@@ -651,10 +684,11 @@ void VulkanRenderer::createCommandBuffers() {
     assert(command_buffers_.size() == kMaxFramesInFlight);
 }
 
-void VulkanRenderer::transitionImageLayout(uint32_t image_index, vk::ImageLayout old_layout,
-        vk::ImageLayout new_layout, vk::AccessFlags2 src_access_mask,
-        vk::AccessFlags2 dst_access_mask, vk::PipelineStageFlags2 src_stage_mask,
-        vk::PipelineStageFlags2 dst_stage_mask) {
+void VulkanRenderer::transitionImageLayout(const uint32_t image_index,
+        const vk::ImageLayout old_layout, const vk::ImageLayout new_layout,
+        const vk::AccessFlags2 src_access_mask, const vk::AccessFlags2 dst_access_mask,
+        const vk::PipelineStageFlags2 src_stage_mask,
+        const vk::PipelineStageFlags2 dst_stage_mask) {
     vk::ImageMemoryBarrier2 barrier = {};
     barrier.srcStageMask = src_stage_mask;
     barrier.srcAccessMask = src_access_mask;
@@ -829,3 +863,4 @@ bool VulkanRenderer::drawFrame() {
     frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;
     return true;
 }
+}  // namespace graphics::vk_renderer

@@ -1,4 +1,4 @@
-add_subdirectory(vulkan)
+add_subdirectory(graphics)
 
 add_library(App)
 target_sources(App
@@ -21,9 +21,9 @@ target_compile_options(App
         -std=c++20
 )
 
-find_library(VulkanRenderer vulkan)
+find_library(Graphics graphics)
 target_link_libraries(App
     PRIVATE
         SDL3
-        VulkanRenderer
+        Graphics
 )

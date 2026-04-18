@@ -1,19 +1,13 @@
 #ifndef SRC_VULKAN_RENDER_HPP_
 #define SRC_VULKAN_RENDER_HPP_
 
-#include "vulkan/vulkan.hpp"
-#include <quill/Logger.h>
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_init.h>
-#include <SDL3/SDL_main.h>
-#include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
-#include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <vector>
 
+namespace graphics::vk_renderer {
 struct BufferHandle {
     vk::Buffer buffer;
     vk::DeviceSize offset;
@@ -52,15 +46,27 @@ class VulkanRenderer {
 
     void createSwapchain(vk::SwapchainKHR old_swapchain);
 
-    bool recreateSwapchain();
+    void recreateSwapchain();
 
-    bool createImageViews();
+    void createImageViews();
 
     vk::ShaderModule createShaderModule(const std::vector<char>& code);
 
-    bool createVertexBuffer();
+    BufferHandle createBuffer(
+        const vk::DeviceSize size,
+        const vk::MemoryPropertyFlags props,
+        const vk::BufferUsageFlags usage);
 
-    uint32_t findMemoryType(uint32_t type_filter, vk::MemoryPropertyFlags prop_flags);
+    void copyBuffer(
+        const vk::Buffer& src,
+        const vk::Buffer& dst,
+        const vk::DeviceSize buffer_size);
+
+    void createVertexBuffer();
+
+    uint32_t findMemoryType(
+        const uint32_t type_filter,
+        const vk::MemoryPropertyFlags prop_flags);
 
     vk::PipelineLayout createGraphicsPipelineLayout();
 
@@ -71,9 +77,13 @@ class VulkanRenderer {
     void createCommandBuffers();
 
     // Drawing Methods
-    void transitionImageLayout(uint32_t image_index, vk::ImageLayout old_layout,
-        vk::ImageLayout new_layout, vk::AccessFlags2 src_access_mask,
-        vk::AccessFlags2 dst_access_mask, vk::PipelineStageFlags2 src_stage_mask,
+    void transitionImageLayout(
+        uint32_t image_index,
+        vk::ImageLayout old_layout,
+        vk::ImageLayout new_layout,
+        vk::AccessFlags2 src_access_mask,
+        vk::AccessFlags2 dst_access_mask,
+        vk::PipelineStageFlags2 src_stage_mask,
         vk::PipelineStageFlags2 dst_stage_mask);
 
     bool recordCommandBuffer(uint32_t image_index);
@@ -101,5 +111,6 @@ class VulkanRenderer {
     uint32_t frame_index_ = 0;
     bool framebuffer_resized_ = false;
 };
+}  // namespace graphics::vk_renderer
 
 #endif  // SRC_VULKAN_RENDER_HPP_

@@ -3,12 +3,16 @@
 
 #include <SDL3/SDL.h>
 
-#include "vulkan/render.hpp"
+#include "graphics/vulkan_renderer.hpp"
 
-class SDLApp {
+namespace app {
+class SDLWindow {
 protected:
-    SDLApp();
-    ~SDLApp() {
+    SDLWindow();
+    SDLWindow(const SDLWindow&) = delete;
+    SDLWindow& operator=(const SDLWindow&) = delete;
+
+    ~SDLWindow() {
         SDL_DestroyWindow(window_);
         SDL_Quit();
     }
@@ -16,19 +20,20 @@ protected:
     SDL_Window* window_;
 };
 
-class App : private SDLApp {
+class App : private SDLWindow {
   public:
-    explicit App();
-    ~App();
+    explicit App() : renderer_(window_) {}
+    App(const App&) = delete;
+    App& operator=(const App&) = delete;
 
     bool pollEvent(SDL_Event& event);
     inline void drawFrame() { renderer_.drawFrame(); }
-    void close();
 
   private:
     SDL_Window* createWindow();
 
-    VulkanRenderer renderer_;
+    graphics::vk_renderer::VulkanRenderer renderer_;
 };
+}  // namespace app
 
 #endif  // SRC_APP_HPP_

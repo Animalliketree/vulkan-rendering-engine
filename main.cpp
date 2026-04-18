@@ -12,7 +12,7 @@ int main() {
     quill::Logger* logger = quill::simple_logger();
 
     try {
-        App app;
+        app::App app;
 
         bool done = false;
         while (!done) {
