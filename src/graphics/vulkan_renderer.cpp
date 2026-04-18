@@ -57,10 +57,13 @@ struct Vertex {
 };
 
 const std::vector<Vertex> vertices = {
-  {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-  {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{-0.5f, 0.5f},  {0.0f, 1.0f, 0.0f}},
+    {{0.5f,  -0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{0.5f,  0.5f},  {1.0f, 1.0f, 1.0f}}
 };
+
+const std::vector<uint16_t> indices = {0, 2, 3, 3, 1, 0};
 
 const std::vector<const char*> kRequiredDeviceExtensions = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -217,7 +220,8 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
     createSwapchain(nullptr);
     createImageViews();
     createCommandPool();
-    createVertexBuffer();
+    loadDataToDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer, vertex_buffer_);
+    loadDataToDevice(indices, vk::BufferUsageFlagBits::eIndexBuffer, index_buffer_);
     createGraphicsPipeline();
     createCommandBuffers();
     createSyncObjects();
@@ -236,6 +240,8 @@ VulkanRenderer::~VulkanRenderer() {
     device_.destroyShaderModule(shader_module_);
     for (VkImageView view : swapchain_.image_views)
         device_.destroyImageView(view);
+    device_.destroyBuffer(index_buffer_.buffer);
+    device_.freeMemory(index_buffer_.memory);
     device_.destroyBuffer(vertex_buffer_.buffer);
     device_.freeMemory(vertex_buffer_.memory);
     device_.destroySwapchainKHR(swapchain_.swapchain);
@@ -502,25 +508,25 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
     graphics_queue_.waitIdle();
 }
 
-void VulkanRenderer::createVertexBuffer() {
+template<typename T>
+void VulkanRenderer::loadDataToDevice(const std::vector<T> data, const vk::BufferUsageFlags usage,
+                                      BufferHandle& dst) {
     assert(device_ != nullptr);
 
-    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+    vk::DeviceSize buffer_size = sizeof(data[0]) * data.size();
 
-    vk::MemoryPropertyFlags flags = vk::MemoryPropertyFlagBits::eHostVisible
-        | vk::MemoryPropertyFlagBits::eHostCoherent;
+    BufferHandle staging_buf = createBuffer(buffer_size,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        vk::BufferUsageFlagBits::eTransferSrc);
+    dst = createBuffer(buffer_size,
+        vk::MemoryPropertyFlagBits::eDeviceLocal,
+        usage | vk::BufferUsageFlagBits::eTransferDst);
 
-    BufferHandle staging_buf = createBuffer(buffer_size, flags,
-                                            vk::BufferUsageFlagBits::eTransferSrc);
-    vertex_buffer_ = createBuffer(buffer_size, vk::MemoryPropertyFlagBits::eDeviceLocal,
-                                  vk::BufferUsageFlagBits::eVertexBuffer
-                                  | vk::BufferUsageFlagBits::eTransferDst);
-
-    void* data = device_.mapMemory(staging_buf.memory, 0, buffer_size);
-    memcpy(data, vertices.data(), buffer_size);
+    void* mem = device_.mapMemory(staging_buf.memory, staging_buf.offset, buffer_size);
+    SDL_memcpy(mem, data.data(), buffer_size);
     device_.unmapMemory(staging_buf.memory);
 
-    copyBuffer(staging_buf.buffer, vertex_buffer_.buffer, buffer_size);
+    copyBuffer(staging_buf.buffer, dst.buffer, buffer_size);
     device_.destroyBuffer(staging_buf.buffer);
     device_.freeMemory(staging_buf.memory);
 }
@@ -744,6 +750,8 @@ bool VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
                                                 graphics_pipeline_);
     command_buffers_[frame_index_].bindVertexBuffers(0, 1, &vertex_buffer_.buffer,
                                                      &vertex_buffer_.offset);
+    command_buffers_[frame_index_].bindIndexBuffer(index_buffer_.buffer, index_buffer_.offset,
+                                                   vk::IndexType::eUint16);
 
     vk::Viewport viewport = {0.0f, 0.0f, static_cast<float>(swapchain_.extent.width),
                              static_cast<float>(swapchain_.extent.height), 0.0f, 1.0f};
@@ -752,7 +760,7 @@ bool VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
 
     command_buffers_[frame_index_].setViewport(0, 1, &viewport);
     command_buffers_[frame_index_].setScissor(0, 1, &scissor);
-    command_buffers_[frame_index_].draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+    command_buffers_[frame_index_].drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     command_buffers_[frame_index_].endRendering();
 
     transitionImageLayout(image_index, vk::ImageLayout::eColorAttachmentOptimal,

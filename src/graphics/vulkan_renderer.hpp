@@ -62,7 +62,11 @@ class VulkanRenderer {
         const vk::Buffer& dst,
         const vk::DeviceSize buffer_size);
 
-    void createVertexBuffer();
+    template<typename T>
+    void loadDataToDevice(
+        const std::vector<T> data,
+        const vk::BufferUsageFlags usage,
+        BufferHandle& dst);
 
     uint32_t findMemoryType(
         const uint32_t type_filter,
@@ -78,31 +82,32 @@ class VulkanRenderer {
 
     // Drawing Methods
     void transitionImageLayout(
-        uint32_t image_index,
-        vk::ImageLayout old_layout,
-        vk::ImageLayout new_layout,
-        vk::AccessFlags2 src_access_mask,
-        vk::AccessFlags2 dst_access_mask,
-        vk::PipelineStageFlags2 src_stage_mask,
-        vk::PipelineStageFlags2 dst_stage_mask);
+        const uint32_t image_index,
+        const vk::ImageLayout old_layout,
+        const vk::ImageLayout new_layout,
+        const vk::AccessFlags2 src_access_mask,
+        const vk::AccessFlags2 dst_access_mask,
+        const vk::PipelineStageFlags2 src_stage_mask,
+        const vk::PipelineStageFlags2 dst_stage_mask);
 
     bool recordCommandBuffer(uint32_t image_index);
 
     bool createSyncObjects();
 
-    vk::Instance instance_;
-    vk::PhysicalDevice physical_device_;
-    vk::Device device_;
+    vk::Instance instance_ = nullptr;
+    vk::PhysicalDevice physical_device_ = nullptr;
+    vk::Device device_ = nullptr;
     uint32_t graphics_qf_idx_ = UINT32_MAX;
-    vk::Queue graphics_queue_;
-    VkSurfaceKHR surface_;
-    SwapchainHandle swapchain_;
+    vk::Queue graphics_queue_ = nullptr;
+    VkSurfaceKHR surface_ = nullptr;
+    SwapchainHandle swapchain_ = {};
 
-    vk::ShaderModule shader_module_;
-    BufferHandle vertex_buffer_;
-    vk::PipelineLayout graphics_pipeline_layout_;
-    vk::Pipeline graphics_pipeline_;
-    vk::CommandPool command_pool_;
+    vk::ShaderModule shader_module_ = nullptr;
+    BufferHandle vertex_buffer_ = {};
+    BufferHandle index_buffer_ = {};
+    vk::PipelineLayout graphics_pipeline_layout_ = nullptr;
+    vk::Pipeline graphics_pipeline_ = nullptr;
+    vk::CommandPool command_pool_ = nullptr;
     std::vector<vk::CommandBuffer> command_buffers_;
     std::vector<vk::Semaphore> present_complete_semaphores_;
     std::vector<vk::Semaphore> render_finished_semaphores_;
