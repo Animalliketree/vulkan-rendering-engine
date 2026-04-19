@@ -4,6 +4,7 @@ target_sources(Graphics
         vulkan_renderer_init.cpp
         vulkan_renderer_swapchain.cpp
         vulkan_renderer_descriptor_set.cpp
+        vulkan_renderer_graphics_pipeline.cpp
         vulkan_renderer.cpp
 
     PUBLIC

@@ -4,12 +4,27 @@
 #include "vulkan/vulkan.hpp"
 #include <SDL3/SDL_video.h>
 #include <vulkan/vulkan.hpp>
+#include <glm/glm.hpp>
 
 #include <cstdint>
 #include <chrono>
 #include <vector>
 
 namespace graphics::vk_renderer {
+struct Vertex {
+  glm::vec2 pos;
+  glm::vec3 color;
+
+  static vk::VertexInputBindingDescription getBindingDescription() {
+    return {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
+  }
+
+  static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescription() {
+    return {{{0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)},
+             {1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)}}};
+  }
+};
+
 struct BufferHandle {
     vk::Buffer buffer;
     vk::DeviceSize offset;
