@@ -1,13 +1,17 @@
-#include "vulkan_renderer.hpp"
+/* Copyright 2026 Alix Boivin */
 
 #include <SDL3/SDL_vulkan.h>
+#include <vector>
 #include <vulkan/vulkan.hpp>
+
+#include "../graphics/vulkan_renderer.hpp"
 
 namespace {
 #ifdef NDEBUG
-    const std::vector<char const*> kValidationLayers = {};
+const std::vector<char const*> kValidationLayers = {};
 #else
-    const std::vector<char const*> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
+const std::vector<char const*> kValidationLayers = {
+"VK_LAYER_KHRONOS_validation"};
 #endif
 
 constexpr char kAppTitle[] = "Game";
@@ -24,7 +28,8 @@ vk::ApplicationInfo buildAppInfo() {
 }
 
 bool validationLayersSupported() {
-    std::vector<vk::LayerProperties> layer_props = vk::enumerateInstanceLayerProperties();
+    std::vector<vk::LayerProperties> layer_props =
+        vk::enumerateInstanceLayerProperties();
 
     for (const char* target : kValidationLayers) {
         bool layer_available = false;
@@ -82,10 +87,12 @@ void VulkanRenderer::createInstance() noexcept {
 
     vk::InstanceCreateInfo instance_info = {};
     instance_info.pApplicationInfo = &app_info;
-    instance_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    instance_info.enabledExtensionCount =
+        static_cast<uint32_t>(extensions.size());
     instance_info.ppEnabledExtensionNames = extensions.data();
     if (layers_supported) {
-        instance_info.enabledLayerCount = static_cast<uint32_t>(kValidationLayers.size());
+        instance_info.enabledLayerCount =
+            static_cast<uint32_t>(kValidationLayers.size());
         instance_info.ppEnabledLayerNames = kValidationLayers.data();
     } else {
         instance_info.enabledLayerCount = 0;

@@ -1,3 +1,5 @@
+/* Copyright 2026 Alix Boivin */
+
 #ifndef SRC_APP_HPP_
 #define SRC_APP_HPP_
 
@@ -7,7 +9,7 @@
 
 namespace app {
 class SDLWindow {
-protected:
+ protected:
     SDLWindow() noexcept;
     SDLWindow(const SDLWindow&) = delete;
     SDLWindow& operator=(const SDLWindow&) = delete;
@@ -21,7 +23,7 @@ protected:
 };
 
 class App : private SDLWindow {
-  public:
+ public:
     explicit App() noexcept : renderer_(window_) {}
     App(const App&) = delete;
     App& operator=(const App&) = delete;
@@ -29,7 +31,7 @@ class App : private SDLWindow {
     bool pollEvent(SDL_Event& event);
     inline void drawFrame() { renderer_.drawFrame(); }
 
-  private:
+ private:
     graphics::vk_renderer::VulkanRenderer renderer_;
 };
 }  // namespace app

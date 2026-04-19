@@ -1,9 +1,11 @@
-#include "vulkan_renderer.hpp"
+/* Copyright 2026 Alix Boivin */
 
 #include <SDL3/SDL_vulkan.h>
-
 #include <cassert>
+#include <vector>
 #include <vulkan/vulkan.hpp>
+
+#include "../graphics/vulkan_renderer.hpp"
 
 namespace {
 const std::vector<const char*> kRequiredDeviceExtensions = {
@@ -25,7 +27,8 @@ bool evaluatePhysicalDeviceProperties(vk::PhysicalDevice device) {
 bool evaluateDeviceExtensions(vk::PhysicalDevice device) {
     assert(device != nullptr);
 
-    std::vector<vk::ExtensionProperties> extensions = device.enumerateDeviceExtensionProperties();
+    std::vector<vk::ExtensionProperties> extensions =
+        device.enumerateDeviceExtensionProperties();
 
     for (const char* extension : kRequiredDeviceExtensions) {
         bool available = false;
@@ -65,11 +68,13 @@ namespace graphics::vk_renderer {
 uint32_t VulkanRenderer::getQueueFamilyIndex(vk::PhysicalDevice device) {
     assert(device != nullptr);
 
-    std::vector<vk::QueueFamilyProperties> props = device.getQueueFamilyProperties();
+    std::vector<vk::QueueFamilyProperties> props =
+        device.getQueueFamilyProperties();
 
     bool supports_graphics = false;
     for (uint32_t i = 0; i < props.size(); i++) {
-        supports_graphics = SDL_Vulkan_GetPresentationSupport(instance_, device, i);
+        supports_graphics = SDL_Vulkan_GetPresentationSupport(instance_,
+                                                              device, i);
         if (supports_graphics) return i;
     }
 
@@ -79,7 +84,8 @@ uint32_t VulkanRenderer::getQueueFamilyIndex(vk::PhysicalDevice device) {
 void VulkanRenderer::selectPhysicalDevice() noexcept {
     assert(instance_ != nullptr);
 
-    std::vector<vk::PhysicalDevice> devices = instance_.enumeratePhysicalDevices();
+    std::vector<vk::PhysicalDevice> devices =
+        instance_.enumeratePhysicalDevices();
     assert(devices.size() > 0);
 
     bool device_found = false;
@@ -135,18 +141,20 @@ void VulkanRenderer::createLogicalDevice() noexcept {
     assert(device_ != nullptr);
 }
 
-uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
-                                        const vk::MemoryPropertyFlags prop_flags) noexcept {
-  assert(physical_device_ != nullptr);
+uint32_t VulkanRenderer::findMemoryType(
+        const uint32_t type_filter,
+        const vk::MemoryPropertyFlags prop_flags) noexcept {
+    assert(physical_device_ != nullptr);
 
-  vk::PhysicalDeviceMemoryProperties props = physical_device_.getMemoryProperties();
+    vk::PhysicalDeviceMemoryProperties props =
+        physical_device_.getMemoryProperties();
 
-  for (uint32_t i = 0; i < props.memoryTypeCount; i++) {
-    if (type_filter & (1 << i) &&
-        (props.memoryTypes[i].propertyFlags & prop_flags) == prop_flags)
-      return i;
-  }
+    for (uint32_t i = 0; i < props.memoryTypeCount; i++) {
+        if (type_filter & (1 << i) &&
+            (props.memoryTypes[i].propertyFlags & prop_flags) == prop_flags)
+        return i;
+    }
 
-  abort();
+    abort();
 }
 }  // namespace graphics::vk_renderer

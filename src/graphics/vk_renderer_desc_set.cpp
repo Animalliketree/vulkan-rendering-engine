@@ -1,8 +1,10 @@
-#include "vulkan_renderer.hpp"
-
-#include <vulkan/vulkan.hpp>
+/* Copyright 2026 Alix Boivin */
 
 #include <cassert>
+#include <vector>
+#include <vulkan/vulkan.hpp>
+
+#include "../graphics/vulkan_renderer.hpp"
 
 namespace graphics::vk_renderer {
 void VulkanRenderer::createDescriptorPool() noexcept {
@@ -40,6 +42,7 @@ void VulkanRenderer::createDescriptorSetLayout() noexcept {
 
 void VulkanRenderer::createDescriptorSets() noexcept {
     assert(device_ != nullptr && descriptor_pool_ != nullptr);
+    assert(uniform_buffers_.size() == kMaxFramesInFlight);
 
     std::vector<vk::DescriptorSetLayout> layouts(kMaxFramesInFlight,
                                                  descriptor_set_layout_);

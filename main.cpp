@@ -1,3 +1,4 @@
+/* Copyright 2026 Alix Boivin */
 
 #include <SDL3/SDL_events.h>
 #include <quill/Logger.h>

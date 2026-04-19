@@ -1,10 +1,12 @@
-#include "app.hpp"
+/* Copyright 2026 Alix Boivin */
+
+#include "../src/app.hpp"
 
 #include <SDL3/SDL.h>
-#include <cassert>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <quill/LogFunctions.h>
+#include <cassert>
 
 namespace {
 constexpr char kAppTitle[] = "Game";

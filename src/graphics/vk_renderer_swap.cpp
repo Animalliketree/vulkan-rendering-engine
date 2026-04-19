@@ -1,8 +1,10 @@
-#include "vulkan_renderer.hpp"
-
-#include <vulkan/vulkan.hpp>
+/* Copyright 2026 Alix Boivin */
 
 #include <algorithm>
+#include <vector>
+#include <vulkan/vulkan.hpp>
+
+#include "../graphics/vulkan_renderer.hpp"
 
 namespace {
 constexpr uint32_t kWindowWidth = 800;
@@ -24,7 +26,8 @@ namespace graphics::vk_renderer {
 vk::SurfaceFormatKHR VulkanRenderer::chooseSwapSurfaceFormat() {
     assert(physical_device_ != nullptr);
 
-    std::vector<vk::SurfaceFormatKHR> formats = physical_device_.getSurfaceFormatsKHR(surface_);
+    std::vector<vk::SurfaceFormatKHR> formats =
+        physical_device_.getSurfaceFormatsKHR(surface_);
     assert(formats.size() > 0);
 
     vk::Format desired_format = vk::Format::eB8G8R8A8Srgb;
@@ -38,7 +41,8 @@ vk::SurfaceFormatKHR VulkanRenderer::chooseSwapSurfaceFormat() {
 vk::PresentModeKHR VulkanRenderer::chooseSwapPresentMode() {
     assert(physical_device_ != nullptr);
 
-    std::vector<vk::PresentModeKHR> modes = physical_device_.getSurfacePresentModesKHR(surface_);
+    std::vector<vk::PresentModeKHR> modes =
+        physical_device_.getSurfacePresentModesKHR(surface_);
     assert(modes.size() > 0);
 
     vk::PresentModeKHR desired_mode = vk::PresentModeKHR::eMailbox;
@@ -56,7 +60,7 @@ void VulkanRenderer::createImageViews() noexcept {
     view_info.pNext = nullptr;
     view_info.viewType = vk::ImageViewType::e2D;
     view_info.format = swapchain_.format.format;
-    view_info.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    view_info.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
     view_info.components = {
         vk::ComponentSwizzle::eIdentity,
         vk::ComponentSwizzle::eIdentity,
@@ -76,7 +80,8 @@ void VulkanRenderer::createImageViews() noexcept {
 void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) noexcept {
     assert(physical_device_ != nullptr && surface_ != nullptr);
 
-    vk::SurfaceCapabilitiesKHR capabilities = physical_device_.getSurfaceCapabilitiesKHR(surface_);
+    vk::SurfaceCapabilitiesKHR capabilities =
+        physical_device_.getSurfaceCapabilitiesKHR(surface_);
     assert(capabilities != nullptr);
 
     swapchain_.extent = chooseSwapExtent(capabilities);

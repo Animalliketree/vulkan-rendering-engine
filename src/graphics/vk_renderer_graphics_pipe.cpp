@@ -1,12 +1,17 @@
-#include "vulkan_renderer.hpp"
-
-#include <vulkan/vulkan.hpp>
+/* Copyright 2026 Alix Boivin */
 
 #include <fstream>
+#include <string>
+#include <vector>
+#include <vulkan/vulkan.hpp>
+
+#include "../graphics/vulkan_renderer.hpp"
 
 namespace {
-const std::string kProjectRoot = "/home/arboivin/alix-baque/maison/projets/voxel-engine";
-const std::string kShaderFile = kProjectRoot + "/appdata/slang.spv";
+constexpr char kProjectRoot[] =
+"/home/arboivin/alix-baque/maison/projets/voxel-engine";
+
+const char kShaderFile[] = "/appdata/slang.spv";
 
 std::vector<char> readFile(std::string file_name) {
     assert(!file_name.empty());
@@ -14,7 +19,8 @@ std::vector<char> readFile(std::string file_name) {
     ifs.open(file_name, std::ios::ate | std::ios::binary);
     assert(ifs.is_open());
 
-    std::vector<char> buffer(static_cast<std::vector<char>::size_type>(ifs.tellg()));
+    std::vector<char> buffer(static_cast<std::vector<char>::size_type>(
+        ifs.tellg()));
 
     ifs.seekg(0, std::ios::beg);
     ifs.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
@@ -38,7 +44,7 @@ vk::PipelineRasterizationStateCreateInfo buildRasterizerInfo() {
 }  // namespace
 
 namespace graphics::vk_renderer {
-vk::ShaderModule
+void
 VulkanRenderer::createShaderModule(const std::vector<char>& code) noexcept {
     assert(device_ != nullptr);
 
@@ -46,10 +52,9 @@ VulkanRenderer::createShaderModule(const std::vector<char>& code) noexcept {
     module_info.codeSize = code.size() * sizeof(char);
     module_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
-    vk::ShaderModule module = device_.createShaderModule(module_info);
+    graphics_pipeline_.shader_module = device_.createShaderModule(module_info);
 
-    assert(module != nullptr);
-    return module;
+    assert(graphics_pipeline_.shader_module != nullptr);
 }
 
 vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
@@ -66,46 +71,53 @@ vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
     return layout;
 }
 
-bool VulkanRenderer::createGraphicsPipeline() noexcept {
-    // Shader Stages
-    shader_module_ = createShaderModule(readFile(kShaderFile));
+void VulkanRenderer::createGraphicsPipeline() noexcept {
+    std::vector<char> code =
+        readFile(std::string(kProjectRoot) + "/" + kShaderFile);
+    createShaderModule(code);
 
     vk::PipelineShaderStageCreateInfo vert_stage_info = {};
     vert_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
-    vert_stage_info.module = shader_module_;
+    vert_stage_info.module = graphics_pipeline_.shader_module;
     vert_stage_info.pName = "vertMain";
 
     vk::PipelineShaderStageCreateInfo frag_stage_info = {};
     frag_stage_info.stage = vk::ShaderStageFlagBits::eFragment;
-    frag_stage_info.module = shader_module_;
+    frag_stage_info.module = graphics_pipeline_.shader_module;
     frag_stage_info.pName = "fragMain";
 
-    vk::PipelineShaderStageCreateInfo stage_info[] = {vert_stage_info, frag_stage_info};
+    vk::PipelineShaderStageCreateInfo stage_info[] = {vert_stage_info,
+                                                      frag_stage_info};
 
-    // Inputs
-    vk::VertexInputBindingDescription binding_description = Vertex::getBindingDescription();
+    vk::VertexInputBindingDescription binding_description =
+        Vertex::getBindingDescription();
     auto attribute_descriptions = Vertex::getAttributeDescription();
 
     vk::PipelineVertexInputStateCreateInfo vertex_input_info = {};
-    vertex_input_info.vertexAttributeDescriptionCount = attribute_descriptions.size();
-    vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions.data();
+    vertex_input_info.vertexAttributeDescriptionCount =
+        attribute_descriptions.size();
+    vertex_input_info.pVertexAttributeDescriptions =
+        attribute_descriptions.data();
     vertex_input_info.vertexBindingDescriptionCount = 1;
     vertex_input_info.pVertexBindingDescriptions = &binding_description;
 
     vk::PipelineInputAssemblyStateCreateInfo assembly_info = {};
     assembly_info.topology = vk::PrimitiveTopology::eTriangleList;
 
-    // Viewport
-    vk::Viewport viewport{0.0f, 0.0f, static_cast<float>(swapchain_.extent.width),
-                          static_cast<float>(swapchain_.extent.height), 0.0f, 1.0f};
+    vk::Viewport viewport{0.0f, 0.0f,
+                          static_cast<float>(swapchain_.extent.width),
+                          static_cast<float>(swapchain_.extent.height),
+                          0.0f, 1.0f};
 
     vk::Rect2D scissor{vk::Offset2D{0, 0}, swapchain_.extent};
 
-    std::vector<vk::DynamicState> dynamic_states = {vk::DynamicState::eViewport,
-                                                    vk::DynamicState::eScissor};
+    std::vector<vk::DynamicState> dynamic_states = {
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor};
 
     vk::PipelineDynamicStateCreateInfo dyn_state_info = {};
-    dyn_state_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dyn_state_info.dynamicStateCount =
+        static_cast<uint32_t>(dynamic_states.size());
     dyn_state_info.pDynamicStates = dynamic_states.data();
 
     vk::PipelineViewportStateCreateInfo viewport_info = {};
@@ -114,7 +126,8 @@ bool VulkanRenderer::createGraphicsPipeline() noexcept {
     viewport_info.scissorCount = 1;
     viewport_info.pScissors = &scissor;
 
-    vk::PipelineRasterizationStateCreateInfo rasterizer_info = buildRasterizerInfo();
+    vk::PipelineRasterizationStateCreateInfo rasterizer_info =
+        buildRasterizerInfo();
 
     vk::PipelineMultisampleStateCreateInfo multisample_info = {};
     multisample_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
@@ -133,7 +146,7 @@ bool VulkanRenderer::createGraphicsPipeline() noexcept {
     color_blend_info.attachmentCount = 1;
     color_blend_info.pAttachments = &color_blend_attach;
 
-    graphics_pipeline_layout_ = createGraphicsPipelineLayout();
+    graphics_pipeline_.layout = createGraphicsPipelineLayout();
 
     vk::PipelineRenderingCreateInfo rendering_info = {};
     rendering_info.colorAttachmentCount = 1;
@@ -150,14 +163,13 @@ bool VulkanRenderer::createGraphicsPipeline() noexcept {
     pipeline_info.pMultisampleState = &multisample_info;
     pipeline_info.pColorBlendState = &color_blend_info;
     pipeline_info.pDynamicState = &dyn_state_info;
-    pipeline_info.layout = graphics_pipeline_layout_;
+    pipeline_info.layout = graphics_pipeline_.layout;
     pipeline_info.renderPass = nullptr;
     pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
     pipeline_info.basePipelineIndex = -1;
 
-    graphics_pipeline_ = device_.createGraphicsPipelines(nullptr, pipeline_info).value[0];
-    assert(graphics_pipeline_ != nullptr);
-
-    return true;
+    graphics_pipeline_.pipeline = device_.createGraphicsPipelines(
+        nullptr, pipeline_info).value[0];
+    assert(graphics_pipeline_.pipeline != nullptr);
 }
 }  // namespace graphics::vk_renderer

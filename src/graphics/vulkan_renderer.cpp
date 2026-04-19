@@ -1,28 +1,27 @@
-#include "vulkan_renderer.hpp"
-#include "vulkan/vulkan.hpp"
+/* Copyright 2026 Alix Boivin */
+
+#include "../../src/graphics/vulkan_renderer.hpp"
 
 #include <fcntl.h>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/ext/vector_float3.hpp>
-#include <glm/trigonometric.hpp>
-#include <quill/LogFunctions.h>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
-#include <ratio>
-#include <vulkan/vulkan.hpp>
-
+#include <quill/LogFunctions.h>
 #include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
-#include <string>
+#include <utility>
 #include <vector>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/trigonometric.hpp>
+#include <vulkan/vulkan.hpp>
 
 namespace {
 struct UniformBufferObject {
@@ -42,16 +41,20 @@ const std::vector<uint16_t> indices = {0, 2, 3, 3, 1, 0};
 }  // namespace
 
 namespace graphics::vk_renderer {
-VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
+VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
     assert(window != nullptr);
 
     quill::Logger* log = quill::simple_logger();
 
     createInstance();
 
-    bool success = SDL_Vulkan_CreateSurface(window, instance_, nullptr, &surface_);
-    if (!success) throw std::runtime_error(
-        "Failed to create Vulkan surface: " + std::to_string(*SDL_GetError()));
+    bool success = SDL_Vulkan_CreateSurface(window, instance_, nullptr,
+                                            &surface_);
+    if (!success) {
+        quill::info(log, "Failed to create Vulkan surface: {}",
+                    SDL_GetError());
+        abort();
+    }
 
     selectPhysicalDevice();
     createLogicalDevice();
@@ -60,50 +63,61 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
     createSwapchain(nullptr);
     createImageViews();
     createCommandPool();
-    loadDataToDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer, vertex_buffer_);
-    loadDataToDevice(indices, vk::BufferUsageFlagBits::eIndexBuffer, index_buffer_);
-    quill::info(log, "Creating descriptor pool...");
-    createDescriptorPool();
-    quill::info(log, "Creating uniform buffers...");
-    createUniformBuffers();
-    quill::info(log, "Creating descriptor set layout...");
-    createDescriptorSetLayout();
-    quill::info(log, "Creating descriptor sets...");
-    createDescriptorSets();
-    quill::info(log, "Creating graphics pipeline...");
-    createGraphicsPipeline();
-    quill::info(log, "Creating command buffers...");
     createCommandBuffers();
-    quill::info(log, "Creating synchronization objects...");
+    loadDataToDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer,
+                     vertex_buffer_);
+    loadDataToDevice(indices, vk::BufferUsageFlagBits::eIndexBuffer,
+                     index_buffer_);
+    createUniformBuffers();
+    createDescriptorPool();
+    createDescriptorSetLayout();
+    createDescriptorSets();
+    createGraphicsPipeline();
     createSyncObjects();
 }
 
-VulkanRenderer::~VulkanRenderer() {
+VulkanRenderer::~VulkanRenderer() noexcept {
     device_.waitIdle();
+
     for (VkFence fence : draw_fences_) device_.destroyFence(fence);
-    for (VkSemaphore semaphore : present_complete_semaphores_)
-        device_.destroySemaphore(semaphore);
     for (VkSemaphore semaphore : render_finished_semaphores_)
         device_.destroySemaphore(semaphore);
-    device_.destroyCommandPool(command_pool_);
-    device_.destroyPipeline(graphics_pipeline_);
-    device_.destroyPipelineLayout(graphics_pipeline_layout_);
-    device_.destroyShaderModule(shader_module_);
-    for (VkImageView view : swapchain_.image_views)
-        device_.destroyImageView(view);
+    for (VkSemaphore semaphore : present_complete_semaphores_)
+        device_.destroySemaphore(semaphore);
+
+    device_.destroyPipeline(graphics_pipeline_.pipeline);
+    device_.destroyPipelineLayout(graphics_pipeline_.layout);
+    device_.destroyShaderModule(graphics_pipeline_.shader_module);
+
+    device_.destroyDescriptorSetLayout(descriptor_set_layout_);
+    device_.destroyDescriptorPool(descriptor_pool_);
+
+    for (BufferHandle buf : uniform_buffers_) {
+        device_.unmapMemory(buf.memory);
+        device_.destroyBuffer(buf.buffer);
+        device_.freeMemory(buf.memory);
+    }
+
     device_.destroyBuffer(index_buffer_.buffer);
     device_.freeMemory(index_buffer_.memory);
     device_.destroyBuffer(vertex_buffer_.buffer);
     device_.freeMemory(vertex_buffer_.memory);
+
+    device_.destroyCommandPool(command_pool_);
+
+    for (VkImageView view : swapchain_.image_views)
+        device_.destroyImageView(view);
     device_.destroySwapchainKHR(swapchain_.swapchain);
-    device_.destroy();
     SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
+
+    device_.destroy();
     instance_.destroy();
 }
 
-BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
-                                          const vk::MemoryPropertyFlags props,
-                                          const vk::BufferUsageFlags usage) noexcept {
+BufferHandle VulkanRenderer::createBuffer(
+        const vk::DeviceSize size,
+        const vk::MemoryPropertyFlags props,
+        const vk::BufferUsageFlags usage) noexcept {
     BufferHandle buf;
     vk::BufferCreateInfo buf_info;
     buf_info.size = size;
@@ -111,11 +125,13 @@ BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
     buf_info.sharingMode = vk::SharingMode::eExclusive;
     buf.buffer = device_.createBuffer(buf_info);
 
-    vk::MemoryRequirements mem_req = device_.getBufferMemoryRequirements(buf.buffer);
+    vk::MemoryRequirements mem_req = device_.getBufferMemoryRequirements(
+        buf.buffer);
 
     vk::MemoryAllocateInfo alloc_info;
     alloc_info.allocationSize = mem_req.size;
-    alloc_info.memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits, props);
+    alloc_info.memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits,
+                                                props);
     buf.memory = device_.allocateMemory(alloc_info);
 
     buf.offset = 0;
@@ -149,20 +165,23 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
 }
 
 template<typename T>
-void VulkanRenderer::loadDataToDevice(const std::vector<T> data, const vk::BufferUsageFlags usage,
+void VulkanRenderer::loadDataToDevice(const std::vector<T> data,
+                                      const vk::BufferUsageFlags usage,
                                       BufferHandle& dst) noexcept {
     assert(device_ != nullptr);
 
     vk::DeviceSize buffer_size = sizeof(data[0]) * data.size();
 
     BufferHandle staging_buf = createBuffer(buffer_size,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        vk::MemoryPropertyFlagBits::eHostVisible
+        | vk::MemoryPropertyFlagBits::eHostCoherent,
         vk::BufferUsageFlagBits::eTransferSrc);
     dst = createBuffer(buffer_size,
         vk::MemoryPropertyFlagBits::eDeviceLocal,
         usage | vk::BufferUsageFlagBits::eTransferDst);
 
-    void* mem = device_.mapMemory(staging_buf.memory, staging_buf.offset, buffer_size);
+    void* mem = device_.mapMemory(staging_buf.memory, staging_buf.offset,
+                                  buffer_size);
     SDL_memcpy(mem, data.data(), buffer_size);
     device_.unmapMemory(staging_buf.memory);
 
@@ -185,7 +204,8 @@ void VulkanRenderer::createUniformBuffers() noexcept {
     for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
         vk::DeviceSize buf_size = sizeof(UniformBufferObject);
         BufferHandle buf = createBuffer(buf_size,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            vk::MemoryPropertyFlagBits::eHostVisible
+            | vk::MemoryPropertyFlagBits::eHostCoherent,
             vk::BufferUsageFlagBits::eUniformBuffer);
         uniform_buffers_.emplace_back(std::move(buf));
         uniform_buffer_maps_.emplace_back(
@@ -218,7 +238,8 @@ void VulkanRenderer::createCommandBuffers() noexcept {
 
 void VulkanRenderer::transitionImageLayout(const uint32_t image_index,
         const vk::ImageLayout old_layout, const vk::ImageLayout new_layout,
-        const vk::AccessFlags2 src_access_mask, const vk::AccessFlags2 dst_access_mask,
+        const vk::AccessFlags2 src_access_mask,
+        const vk::AccessFlags2 dst_access_mask,
         const vk::PipelineStageFlags2 src_stage_mask,
         const vk::PipelineStageFlags2 dst_stage_mask) {
     vk::ImageMemoryBarrier2 barrier = {};
@@ -243,7 +264,7 @@ void VulkanRenderer::transitionImageLayout(const uint32_t image_index,
     command_buffers_[frame_index_].pipelineBarrier2(&dependency_info);
 }
 
-bool VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
+void VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
     vk::CommandBufferBeginInfo begin_info = {};
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
@@ -272,37 +293,44 @@ bool VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
     rendering_info.pColorAttachments = &attachment_info;
     command_buffers_[frame_index_].beginRendering(&rendering_info);
 
-    command_buffers_[frame_index_].bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                                graphics_pipeline_);
-    command_buffers_[frame_index_].bindVertexBuffers(0, 1, &vertex_buffer_.buffer,
+    command_buffers_[frame_index_].bindPipeline(
+        vk::PipelineBindPoint::eGraphics,
+        graphics_pipeline_.pipeline);
+    command_buffers_[frame_index_].bindVertexBuffers(0, 1,
+                                                     &vertex_buffer_.buffer,
                                                      &vertex_buffer_.offset);
-    command_buffers_[frame_index_].bindIndexBuffer(index_buffer_.buffer, index_buffer_.offset,
+    command_buffers_[frame_index_].bindIndexBuffer(index_buffer_.buffer,
+                                                   index_buffer_.offset,
                                                    vk::IndexType::eUint16);
 
-    vk::Viewport viewport = {0.0f, 0.0f, static_cast<float>(swapchain_.extent.width),
-                             static_cast<float>(swapchain_.extent.height), 0.0f, 1.0f};
+    vk::Viewport viewport = {0.0f, 0.0f,
+                             static_cast<float>(swapchain_.extent.width),
+                             static_cast<float>(swapchain_.extent.height),
+                             0.0f, 1.0f};
 
     vk::Rect2D scissor = {vk::Offset2D{0, 0}, swapchain_.extent};
 
     command_buffers_[frame_index_].setViewport(0, 1, &viewport);
     command_buffers_[frame_index_].setScissor(0, 1, &scissor);
-    command_buffers_[frame_index_].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                                      graphics_pipeline_layout_, 0,
-                                                      descriptor_sets_[frame_index_], nullptr);
-    command_buffers_[frame_index_].drawIndexed(static_cast<uint32_t>(indices.size()),
-                                               1, 0, 0, 0);
+    command_buffers_[frame_index_].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        graphics_pipeline_.layout, 0, descriptor_sets_[frame_index_],
+        nullptr);
+    command_buffers_[frame_index_].drawIndexed(
+        static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     command_buffers_[frame_index_].endRendering();
 
-    transitionImageLayout(image_index, vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::ePresentSrcKHR, vk::AccessFlagBits2::eColorAttachmentWrite,
-        {}, vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    transitionImageLayout(image_index,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::ePresentSrcKHR,
+        vk::AccessFlagBits2::eColorAttachmentWrite, {},
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::PipelineStageFlagBits2::eBottomOfPipe);
 
     vkEndCommandBuffer(command_buffers_[frame_index_]);
-    return true;
 }
 
-bool VulkanRenderer::createSyncObjects() noexcept {
+void VulkanRenderer::createSyncObjects() noexcept {
     assert(present_complete_semaphores_.empty()
             && render_finished_semaphores_.empty()
             && draw_fences_.empty());
@@ -313,32 +341,36 @@ bool VulkanRenderer::createSyncObjects() noexcept {
 
     render_finished_semaphores_.resize(swapchain_.images.size());
     for (size_t i = 0; i < swapchain_.images.size(); i++) {
-        render_finished_semaphores_[i] = device_.createSemaphore(semaphore_info);
+        render_finished_semaphores_[i] =
+            device_.createSemaphore(semaphore_info);
         assert(render_finished_semaphores_[i] != nullptr);
     }
 
     present_complete_semaphores_.resize(kMaxFramesInFlight);
     draw_fences_.resize(kMaxFramesInFlight);
     for (size_t i = 0; i < kMaxFramesInFlight; i++) {
-        present_complete_semaphores_[i] = device_.createSemaphore(semaphore_info);
+        present_complete_semaphores_[i] =
+            device_.createSemaphore(semaphore_info);
         draw_fences_[i] = device_.createFence(fence_info);
         assert(present_complete_semaphores_[i] != nullptr
                && draw_fences_[i] != nullptr);
     }
-
-    return true;
 }
 
 using Time = std::chrono::time_point<
-    std::chrono::system_clock,
-    std::chrono::duration<long, std::ratio<1, 1000000000>>>;
+std::chrono::system_clock,
+std::chrono::duration<int64_t, std::ratio<1, 1000000000>>>;
 
 void VulkanRenderer::updateUniformBuffer(uint32_t img_idx, Time start) {
     assert(swapchain_.swapchain != nullptr);
+    const float aspect_ratio =
+        static_cast<float>(swapchain_.extent.width)
+        / static_cast<float>(swapchain_.extent.height);
 
     Time end = std::chrono::high_resolution_clock::now();
 
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(end - start).count();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>
+        (end - start).count();
 
     UniformBufferObject ubo;
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
@@ -347,10 +379,11 @@ void VulkanRenderer::updateUniformBuffer(uint32_t img_idx, Time start) {
                            glm::vec3(0.0f, 0.0f, 0.0f),
                            glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.proj = glm::perspective(glm::radians(45.0f),
-        static_cast<float>(swapchain_.extent.width) / static_cast<float>(swapchain_.extent.height),
+        aspect_ratio,
         0.1f, 10.0f);
 
-    SDL_memcpy(uniform_buffer_maps_[img_idx], &ubo, sizeof(ubo));
+    SDL_memcpy(uniform_buffer_maps_[img_idx % kMaxFramesInFlight], &ubo,
+               sizeof(ubo));
 }
 
 bool VulkanRenderer::drawFrame() {
@@ -368,9 +401,10 @@ bool VulkanRenderer::drawFrame() {
     assert(result == vk::Result::eSuccess);
 
     uint32_t image_index;
-    result = device_.acquireNextImageKHR(swapchain_.swapchain, UINT64_MAX,
-                                         present_complete_semaphores_[frame_index_],
-                                         nullptr, &image_index);
+    result = device_.acquireNextImageKHR(
+        swapchain_.swapchain, UINT64_MAX,
+        present_complete_semaphores_[frame_index_],
+        nullptr, &image_index);
     switch (result) {
         case vk::Result::eErrorOutOfDateKHR:
             recreateSwapchain();
@@ -403,7 +437,8 @@ bool VulkanRenderer::drawFrame() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &render_finished_semaphores_[image_index];
 
-    result = graphics_queue_.submit(1, &submitInfo, draw_fences_[frame_index_]);
+    result = graphics_queue_.submit(1, &submitInfo,
+                                    draw_fences_[frame_index_]);
 
     vk::PresentInfoKHR present_info = {};
     present_info.waitSemaphoreCount = 1;
