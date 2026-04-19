@@ -14,10 +14,7 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
 #include <ratio>
-#include <utility>
 #include <vulkan/vulkan.hpp>
-
-#include <glm/gtc/matrix_transform.hpp>
 
 #include <cassert>
 #include <chrono>
@@ -106,7 +103,7 @@ VulkanRenderer::~VulkanRenderer() {
 
 BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
                                           const vk::MemoryPropertyFlags props,
-                                          const vk::BufferUsageFlags usage) {
+                                          const vk::BufferUsageFlags usage) noexcept {
     BufferHandle buf;
     vk::BufferCreateInfo buf_info;
     buf_info.size = size;
@@ -127,7 +124,7 @@ BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
 }
 
 void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
-                                const vk::DeviceSize buffer_size) {
+                                const vk::DeviceSize buffer_size) noexcept {
     assert(device_ != nullptr && buffer_size > 0);
 
     vk::CommandBufferAllocateInfo alloc_info;
@@ -153,7 +150,7 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
 
 template<typename T>
 void VulkanRenderer::loadDataToDevice(const std::vector<T> data, const vk::BufferUsageFlags usage,
-                                      BufferHandle& dst) {
+                                      BufferHandle& dst) noexcept {
     assert(device_ != nullptr);
 
     vk::DeviceSize buffer_size = sizeof(data[0]) * data.size();
@@ -174,7 +171,7 @@ void VulkanRenderer::loadDataToDevice(const std::vector<T> data, const vk::Buffe
     device_.freeMemory(staging_buf.memory);
 }
 
-void VulkanRenderer::createUniformBuffers() {
+void VulkanRenderer::createUniformBuffers() noexcept {
     if (!uniform_buffers_.empty()) {
         for (BufferHandle buf : uniform_buffers_) {
             device_.destroyBuffer(buf.buffer);
@@ -196,7 +193,7 @@ void VulkanRenderer::createUniformBuffers() {
     }
 }
 
-void VulkanRenderer::createCommandPool() {
+void VulkanRenderer::createCommandPool() noexcept {
     assert(device_ != nullptr);
 
     vk::CommandPoolCreateInfo pool_info = {};
@@ -207,7 +204,7 @@ void VulkanRenderer::createCommandPool() {
     assert(command_pool_ != nullptr);
 }
 
-void VulkanRenderer::createCommandBuffers() {
+void VulkanRenderer::createCommandBuffers() noexcept {
     assert(device_ != nullptr && command_buffers_.empty());
 
     vk::CommandBufferAllocateInfo alloc_info = {};
@@ -305,7 +302,7 @@ bool VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
     return true;
 }
 
-bool VulkanRenderer::createSyncObjects() {
+bool VulkanRenderer::createSyncObjects() noexcept {
     assert(present_complete_semaphores_.empty()
             && render_finished_semaphores_.empty()
             && draw_fences_.empty());

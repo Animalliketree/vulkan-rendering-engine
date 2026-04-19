@@ -39,7 +39,7 @@ vk::PipelineRasterizationStateCreateInfo buildRasterizerInfo() {
 
 namespace graphics::vk_renderer {
 vk::ShaderModule
-VulkanRenderer::createShaderModule(const std::vector<char>& code) {
+VulkanRenderer::createShaderModule(const std::vector<char>& code) noexcept {
     assert(device_ != nullptr);
 
     vk::ShaderModuleCreateInfo module_info = {};
@@ -52,7 +52,7 @@ VulkanRenderer::createShaderModule(const std::vector<char>& code) {
     return module;
 }
 
-vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() {
+vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
     assert(device_ != nullptr);
 
     vk::PipelineLayout layout;
@@ -66,7 +66,7 @@ vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() {
     return layout;
 }
 
-bool VulkanRenderer::createGraphicsPipeline() {
+bool VulkanRenderer::createGraphicsPipeline() noexcept {
     // Shader Stages
     shader_module_ = createShaderModule(readFile(kShaderFile));
 

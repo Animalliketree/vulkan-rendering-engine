@@ -49,7 +49,7 @@ vk::PresentModeKHR VulkanRenderer::chooseSwapPresentMode() {
     return vk::PresentModeKHR::eFifo;
 }
 
-void VulkanRenderer::createImageViews() {
+void VulkanRenderer::createImageViews() noexcept {
     assert(device_ != nullptr && swapchain_.image_views.empty());
 
     vk::ImageViewCreateInfo view_info = {};
@@ -73,7 +73,7 @@ void VulkanRenderer::createImageViews() {
     }
 }
 
-void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) {
+void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) noexcept {
     assert(physical_device_ != nullptr && surface_ != nullptr);
 
     vk::SurfaceCapabilitiesKHR capabilities = physical_device_.getSurfaceCapabilitiesKHR(surface_);

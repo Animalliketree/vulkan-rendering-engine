@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_vulkan.h>
 
+#include <cassert>
 #include <vulkan/vulkan.hpp>
 
 namespace {
@@ -75,12 +76,13 @@ uint32_t VulkanRenderer::getQueueFamilyIndex(vk::PhysicalDevice device) {
     return UINT32_MAX;
 }
 
-void VulkanRenderer::selectPhysicalDevice() {
+void VulkanRenderer::selectPhysicalDevice() noexcept {
     assert(instance_ != nullptr);
 
     std::vector<vk::PhysicalDevice> devices = instance_.enumeratePhysicalDevices();
     assert(devices.size() > 0);
 
+    bool device_found = false;
     for (vk::PhysicalDevice device : devices) {
         if (!evaluatePhysicalDeviceProperties(device) ||
             !evaluateDeviceExtensions(device) ||
@@ -91,13 +93,14 @@ void VulkanRenderer::selectPhysicalDevice() {
 
         physical_device_ = device;
         graphics_qf_idx_ = graphics_qf_idx;
-        return;
+        device_found = true;
+        break;
     }
 
-    throw std::runtime_error("Failed to find a suitable Vulkan physical device!");
+    assert(device_found);
 }
 
-void VulkanRenderer::createLogicalDevice() {
+void VulkanRenderer::createLogicalDevice() noexcept {
     assert(physical_device_ != nullptr);
 
     constexpr float kQueuePriority = 0.5f;
@@ -133,7 +136,7 @@ void VulkanRenderer::createLogicalDevice() {
 }
 
 uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
-                                        const vk::MemoryPropertyFlags prop_flags) {
+                                        const vk::MemoryPropertyFlags prop_flags) noexcept {
   assert(physical_device_ != nullptr);
 
   vk::PhysicalDeviceMemoryProperties props = physical_device_.getMemoryProperties();
@@ -144,6 +147,6 @@ uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
       return i;
   }
 
-  throw std::runtime_error("Failed to find suitable memory type!");
+  abort();
 }
 }  // namespace graphics::vk_renderer

@@ -72,7 +72,7 @@ std::vector<const char*> getInstanceExtensions() {
 }  // namespace
 
 namespace graphics::vk_renderer {
-void VulkanRenderer::createInstance() {
+void VulkanRenderer::createInstance() noexcept {
     bool layers_supported = validationLayersSupported();
 
     // Handle extensions

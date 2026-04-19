@@ -8,11 +8,11 @@
 namespace app {
 class SDLWindow {
 protected:
-    SDLWindow();
+    SDLWindow() noexcept;
     SDLWindow(const SDLWindow&) = delete;
     SDLWindow& operator=(const SDLWindow&) = delete;
 
-    ~SDLWindow() {
+    ~SDLWindow() noexcept {
         SDL_DestroyWindow(window_);
         SDL_Quit();
     }
@@ -22,7 +22,7 @@ protected:
 
 class App : private SDLWindow {
   public:
-    explicit App() : renderer_(window_) {}
+    explicit App() noexcept : renderer_(window_) {}
     App(const App&) = delete;
     App& operator=(const App&) = delete;
 
@@ -30,8 +30,6 @@ class App : private SDLWindow {
     inline void drawFrame() { renderer_.drawFrame(); }
 
   private:
-    SDL_Window* createWindow();
-
     graphics::vk_renderer::VulkanRenderer renderer_;
 };
 }  // namespace app

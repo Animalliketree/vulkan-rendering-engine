@@ -54,61 +54,61 @@ class VulkanRenderer {
         std::chrono::system_clock,
         std::chrono::duration<long, std::ratio<1, 1000000000>>>;
 
-    void createInstance();
+    void createInstance() noexcept;
 
-    void selectPhysicalDevice();
+    void selectPhysicalDevice() noexcept;
 
     uint32_t getQueueFamilyIndex(vk::PhysicalDevice device);
 
-    void createLogicalDevice();
+    void createLogicalDevice() noexcept;
 
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
 
     vk::PresentModeKHR chooseSwapPresentMode();
 
-    void createSwapchain(vk::SwapchainKHR old_swapchain);
+    void createSwapchain(vk::SwapchainKHR old_swapchain) noexcept;
 
     void recreateSwapchain();
 
-    void createImageViews();
+    void createImageViews() noexcept;
 
-    vk::ShaderModule createShaderModule(const std::vector<char>& code);
+    vk::ShaderModule createShaderModule(const std::vector<char>& code) noexcept;
 
     BufferHandle createBuffer(
         const vk::DeviceSize size,
         const vk::MemoryPropertyFlags props,
-        const vk::BufferUsageFlags usage);
+        const vk::BufferUsageFlags usage) noexcept;
 
     void copyBuffer(
         const vk::Buffer& src,
         const vk::Buffer& dst,
-        const vk::DeviceSize buffer_size);
+        const vk::DeviceSize buffer_size) noexcept;
 
     template<typename T>
     void loadDataToDevice(
         const std::vector<T> data,
         const vk::BufferUsageFlags usage,
-        BufferHandle& dst);
+        BufferHandle& dst) noexcept;
 
-    void createUniformBuffers();
+    void createUniformBuffers() noexcept;
 
     uint32_t findMemoryType(
         const uint32_t type_filter,
-        const vk::MemoryPropertyFlags prop_flags);
+        const vk::MemoryPropertyFlags prop_flags) noexcept;
 
-    void createDescriptorSetLayout();
+    void createDescriptorSetLayout() noexcept;
 
-    vk::PipelineLayout createGraphicsPipelineLayout();
+    vk::PipelineLayout createGraphicsPipelineLayout() noexcept;
 
-    bool createGraphicsPipeline();
+    bool createGraphicsPipeline() noexcept;
 
-    void createCommandPool();
+    void createCommandPool() noexcept;
 
-    void createCommandBuffers();
+    void createCommandBuffers() noexcept;
 
-    void createDescriptorPool();
+    void createDescriptorPool() noexcept;
 
-    void createDescriptorSets();
+    void createDescriptorSets() noexcept;
 
     // Drawing Methods
     void transitionImageLayout(
@@ -122,7 +122,7 @@ class VulkanRenderer {
 
     bool recordCommandBuffer(uint32_t image_index);
 
-    bool createSyncObjects();
+    bool createSyncObjects() noexcept;
 
     void updateUniformBuffer(uint32_t img_idx, Time start);
 

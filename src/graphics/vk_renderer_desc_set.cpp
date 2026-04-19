@@ -2,8 +2,10 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <cassert>
+
 namespace graphics::vk_renderer {
-void VulkanRenderer::createDescriptorPool() {
+void VulkanRenderer::createDescriptorPool() noexcept {
     assert(device_ != nullptr);
 
     vk::DescriptorPoolSize size;
@@ -18,7 +20,7 @@ void VulkanRenderer::createDescriptorPool() {
     descriptor_pool_ = device_.createDescriptorPool(create_info);
 }
 
-void VulkanRenderer::createDescriptorSetLayout() {
+void VulkanRenderer::createDescriptorSetLayout() noexcept {
     assert(device_ != nullptr);
 
     vk::DescriptorSetLayoutBinding ubo_binding;
@@ -36,7 +38,7 @@ void VulkanRenderer::createDescriptorSetLayout() {
     assert(descriptor_set_layout_ != nullptr);
 }
 
-void VulkanRenderer::createDescriptorSets() {
+void VulkanRenderer::createDescriptorSets() noexcept {
     assert(device_ != nullptr && descriptor_pool_ != nullptr);
 
     std::vector<vk::DescriptorSetLayout> layouts(kMaxFramesInFlight,
