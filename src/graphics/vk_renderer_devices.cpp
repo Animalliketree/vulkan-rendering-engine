@@ -1,0 +1,149 @@
+#include "vulkan_renderer.hpp"
+
+#include <SDL3/SDL_vulkan.h>
+
+#include <vulkan/vulkan.hpp>
+
+namespace {
+const std::vector<const char*> kRequiredDeviceExtensions = {
+  VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+  VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+  VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
+  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
+};
+
+bool evaluatePhysicalDeviceProperties(vk::PhysicalDevice device) {
+    assert(device != nullptr);
+
+    vk::PhysicalDeviceProperties props = device.getProperties();
+
+    if (props.apiVersion < VK_API_VERSION_1_4) return false;
+    else return true;
+}
+
+bool evaluateDeviceExtensions(vk::PhysicalDevice device) {
+    assert(device != nullptr);
+
+    std::vector<vk::ExtensionProperties> extensions = device.enumerateDeviceExtensionProperties();
+
+    for (const char* extension : kRequiredDeviceExtensions) {
+        bool available = false;
+        for (vk::ExtensionProperties prop : extensions) {
+            if (strcmp(extension, prop.extensionName) == 0) {
+                available = true;
+                break;
+            }
+        }
+
+        if (!available) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool evaluatePhysicalDeviceFeatures(vk::PhysicalDevice device) {
+    assert(device != nullptr);
+
+    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT dynamic_state_features;
+    vk::PhysicalDeviceVulkan13Features vk_1_3_features;
+    vk_1_3_features.pNext = &dynamic_state_features;
+
+    vk::PhysicalDeviceFeatures2 features;
+    features.pNext = &vk_1_3_features;
+    device.getFeatures2(&features);
+
+    if (dynamic_state_features.extendedDynamicState == VK_FALSE
+        || vk_1_3_features.dynamicRendering == VK_FALSE) return false;
+    else return true;
+}
+}  // namespace
+
+namespace graphics::vk_renderer {
+uint32_t VulkanRenderer::getQueueFamilyIndex(vk::PhysicalDevice device) {
+    assert(device != nullptr);
+
+    std::vector<vk::QueueFamilyProperties> props = device.getQueueFamilyProperties();
+
+    bool supports_graphics = false;
+    for (uint32_t i = 0; i < props.size(); i++) {
+        supports_graphics = SDL_Vulkan_GetPresentationSupport(instance_, device, i);
+        if (supports_graphics) return i;
+    }
+
+    return UINT32_MAX;
+}
+
+void VulkanRenderer::selectPhysicalDevice() {
+    assert(instance_ != nullptr);
+
+    std::vector<vk::PhysicalDevice> devices = instance_.enumeratePhysicalDevices();
+    assert(devices.size() > 0);
+
+    for (vk::PhysicalDevice device : devices) {
+        if (!evaluatePhysicalDeviceProperties(device) ||
+            !evaluateDeviceExtensions(device) ||
+            !evaluatePhysicalDeviceFeatures(device)) continue;
+
+        uint32_t graphics_qf_idx = getQueueFamilyIndex(device);
+        if (graphics_qf_idx == UINT32_MAX) continue;
+
+        physical_device_ = device;
+        graphics_qf_idx_ = graphics_qf_idx;
+        return;
+    }
+
+    throw std::runtime_error("Failed to find a suitable Vulkan physical device!");
+}
+
+void VulkanRenderer::createLogicalDevice() {
+    assert(physical_device_ != nullptr);
+
+    constexpr float kQueuePriority = 0.5f;
+
+    graphics_qf_idx_ = getQueueFamilyIndex(physical_device_);
+    vk::DeviceQueueCreateInfo queue_info = {};
+    queue_info.queueCount = 1;
+    queue_info.queueFamilyIndex = graphics_qf_idx_;
+    queue_info.pQueuePriorities = &kQueuePriority;
+
+    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT extended_features = {};
+    extended_features.extendedDynamicState = VK_TRUE;
+
+    vk::PhysicalDeviceVulkan13Features vk_1_3_features = {};
+    vk_1_3_features.pNext = &extended_features;
+    vk_1_3_features.dynamicRendering = VK_TRUE;
+    vk_1_3_features.synchronization2 = VK_TRUE;
+
+    vk::PhysicalDeviceFeatures2 features_2 = {};
+    features_2.pNext = &vk_1_3_features;
+
+    vk::DeviceCreateInfo device_info = {};
+    device_info.pNext = &features_2;
+    device_info.queueCreateInfoCount = 1;
+    device_info.pQueueCreateInfos = &queue_info;
+    device_info.enabledExtensionCount = static_cast<uint32_t>(
+        kRequiredDeviceExtensions.size());
+    device_info.ppEnabledExtensionNames =
+        kRequiredDeviceExtensions.data();
+
+    device_ = physical_device_.createDevice(device_info);
+    assert(device_ != nullptr);
+}
+
+uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
+                                        const vk::MemoryPropertyFlags prop_flags) {
+  assert(physical_device_ != nullptr);
+
+  vk::PhysicalDeviceMemoryProperties props = physical_device_.getMemoryProperties();
+
+  for (uint32_t i = 0; i < props.memoryTypeCount; i++) {
+    if (type_filter & (1 << i) &&
+        (props.memoryTypes[i].propertyFlags & prop_flags) == prop_flags)
+      return i;
+  }
+
+  throw std::runtime_error("Failed to find suitable memory type!");
+}
+}  // namespace graphics::vk_renderer

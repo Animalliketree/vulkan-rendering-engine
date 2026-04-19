@@ -2,6 +2,7 @@ add_library(Graphics)
 target_sources(Graphics
     PRIVATE
         vk_renderer_init.cpp
+        vk_renderer_devices.cpp
         vk_renderer_swap.cpp
         vk_renderer_desc_set.cpp
         vk_renderer_graphics_pipe.cpp
