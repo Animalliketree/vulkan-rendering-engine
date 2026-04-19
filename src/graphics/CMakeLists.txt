@@ -1,10 +1,10 @@
 add_library(Graphics)
 target_sources(Graphics
     PRIVATE
-        vulkan_renderer_init.cpp
-        vulkan_renderer_swapchain.cpp
-        vulkan_renderer_descriptor_set.cpp
-        vulkan_renderer_graphics_pipeline.cpp
+        vk_renderer_init.cpp
+        vk_renderer_swap.cpp
+        vk_renderer_desc_set.cpp
+        vk_renderer_graphics_pipe.cpp
         vulkan_renderer.cpp
 
     PUBLIC

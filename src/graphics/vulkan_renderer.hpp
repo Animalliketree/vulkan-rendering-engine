@@ -5,7 +5,6 @@
 #include <SDL3/SDL_video.h>
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
-
 #include <cstdint>
 #include <chrono>
 #include <vector>
