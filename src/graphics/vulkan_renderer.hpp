@@ -34,6 +34,8 @@ class VulkanRenderer {
     bool drawFrame();
 
   private:
+    const uint32_t kMaxFramesInFlight = 2;
+
     using Time = std::chrono::time_point<
         std::chrono::system_clock,
         std::chrono::duration<long, std::ratio<1, 1000000000>>>;

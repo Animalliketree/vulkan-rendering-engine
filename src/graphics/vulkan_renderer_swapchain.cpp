@@ -49,6 +49,30 @@ vk::PresentModeKHR VulkanRenderer::chooseSwapPresentMode() {
     return vk::PresentModeKHR::eFifo;
 }
 
+void VulkanRenderer::createImageViews() {
+    assert(device_ != nullptr && swapchain_.image_views.empty());
+
+    vk::ImageViewCreateInfo view_info = {};
+    view_info.pNext = nullptr;
+    view_info.viewType = vk::ImageViewType::e2D;
+    view_info.format = swapchain_.format.format;
+    view_info.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
+    view_info.components = {
+        vk::ComponentSwizzle::eIdentity,
+        vk::ComponentSwizzle::eIdentity,
+        vk::ComponentSwizzle::eIdentity,
+        vk::ComponentSwizzle::eIdentity
+    };
+
+    swapchain_.image_views.resize(swapchain_.images.size());
+    for (uint32_t i = 0; i < swapchain_.images.size(); i++) {
+        view_info.image = swapchain_.images[i];
+
+        swapchain_.image_views[i] = device_.createImageView(view_info);
+        assert(swapchain_.image_views[i] != nullptr);
+    }
+}
+
 void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) {
     assert(physical_device_ != nullptr && surface_ != nullptr);
 
@@ -84,5 +108,18 @@ void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) {
     device_.destroySwapchainKHR(old_swapchain);
 
     swapchain_.images = device_.getSwapchainImagesKHR(swapchain_.swapchain);
+}
+
+void VulkanRenderer::recreateSwapchain() {
+    assert(device_ != nullptr);
+
+    device_.waitIdle();
+
+    for (vk::ImageView view : swapchain_.image_views)
+        device_.destroyImageView(view);
+    swapchain_.image_views.clear();
+
+    createSwapchain(swapchain_.swapchain);
+    createImageViews();
 }
 }  // namespace graphics::vk_renderer
