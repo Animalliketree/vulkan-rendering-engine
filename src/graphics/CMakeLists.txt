@@ -2,6 +2,7 @@ add_library(Graphics)
 target_sources(Graphics
     PRIVATE
         vulkan_renderer_init.cpp
+        vulkan_renderer_swapchain.cpp
         vulkan_renderer.cpp
 
     PUBLIC
