@@ -1,10 +1,12 @@
 #ifndef SRC_VULKAN_RENDER_HPP_
 #define SRC_VULKAN_RENDER_HPP_
 
+#include "vulkan/vulkan.hpp"
 #include <SDL3/SDL_video.h>
 #include <vulkan/vulkan.hpp>
 
 #include <cstdint>
+#include <chrono>
 #include <vector>
 
 namespace graphics::vk_renderer {
@@ -32,6 +34,10 @@ class VulkanRenderer {
     bool drawFrame();
 
   private:
+    using Time = std::chrono::time_point<
+        std::chrono::system_clock,
+        std::chrono::duration<long, std::ratio<1, 1000000000>>>;
+
     void createInstance();
 
     void selectPhysicalDevice();
@@ -68,9 +74,13 @@ class VulkanRenderer {
         const vk::BufferUsageFlags usage,
         BufferHandle& dst);
 
+    void createUniformBuffers();
+
     uint32_t findMemoryType(
         const uint32_t type_filter,
         const vk::MemoryPropertyFlags prop_flags);
+
+    void createDescriptorSetLayout();
 
     vk::PipelineLayout createGraphicsPipelineLayout();
 
@@ -79,6 +89,10 @@ class VulkanRenderer {
     void createCommandPool();
 
     void createCommandBuffers();
+
+    void createDescriptorPool();
+
+    void createDescriptorSets();
 
     // Drawing Methods
     void transitionImageLayout(
@@ -94,6 +108,8 @@ class VulkanRenderer {
 
     bool createSyncObjects();
 
+    void updateUniformBuffer(uint32_t img_idx, Time start);
+
     vk::Instance instance_ = nullptr;
     vk::PhysicalDevice physical_device_ = nullptr;
     vk::Device device_ = nullptr;
@@ -105,10 +121,16 @@ class VulkanRenderer {
     vk::ShaderModule shader_module_ = nullptr;
     BufferHandle vertex_buffer_ = {};
     BufferHandle index_buffer_ = {};
+    std::vector<BufferHandle> uniform_buffers_;
+    std::vector<void*> uniform_buffer_maps_;
+
+    vk::DescriptorSetLayout descriptor_set_layout_ = nullptr;
     vk::PipelineLayout graphics_pipeline_layout_ = nullptr;
     vk::Pipeline graphics_pipeline_ = nullptr;
     vk::CommandPool command_pool_ = nullptr;
     std::vector<vk::CommandBuffer> command_buffers_;
+    vk::DescriptorPool descriptor_pool_ = nullptr;
+    std::vector<vk::DescriptorSet> descriptor_sets_;
     std::vector<vk::Semaphore> present_complete_semaphores_;
     std::vector<vk::Semaphore> render_finished_semaphores_;
     std::vector<vk::Fence> draw_fences_;

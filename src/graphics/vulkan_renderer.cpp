@@ -2,6 +2,10 @@
 #include "vulkan/vulkan.hpp"
 
 #include <fcntl.h>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/trigonometric.hpp>
 #include <quill/LogFunctions.h>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
@@ -9,33 +13,30 @@
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
+#include <ratio>
+#include <utility>
 #include <vulkan/vulkan.hpp>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <array>
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 #ifndef VK_EXT_DEBUG_REPORT_EXTENSION_NAME
 #define VK_EXT_DEBUG_REPORT_EXTENSION_NAME "VK_EXT_debug_report"
 #endif
 
 namespace {
-#ifdef NDEBUG
-    const std::vector<char const*> kValidationLayers = {};
-#else
-    const std::vector<char const*> kValidationLayers = {"VK_LAYER_KHRONOS_validation"};
-#endif
-
-constexpr char kAppTitle[] = "Game";
-constexpr char kEngineTitle[] = "Hephaestus";
 constexpr uint32_t kWindowWidth = 800;
 constexpr uint32_t kWindowHeight = 600;
 constexpr uint32_t kMaxFramesInFlight = 2;
@@ -56,6 +57,12 @@ struct Vertex {
   }
 };
 
+struct UniformBufferObject {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
+
 const std::vector<Vertex> vertices = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{-0.5f, 0.5f},  {0.0f, 1.0f, 0.0f}},
@@ -71,63 +78,6 @@ const std::vector<const char*> kRequiredDeviceExtensions = {
   VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
   VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
 };
-
-vk::ApplicationInfo buildAppInfo() {
-    vk::ApplicationInfo app_info = {};
-    app_info.pApplicationName = kAppTitle;
-    app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.pEngineName = kEngineTitle;
-    app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.apiVersion = VK_API_VERSION_1_4;
-    return app_info;
-}
-
-bool validationLayersSupported() {
-    std::vector<vk::LayerProperties> layer_props = vk::enumerateInstanceLayerProperties();
-
-    for (const char* target : kValidationLayers) {
-        bool layer_available = false;
-        for (vk::LayerProperties layer : layer_props) {
-            if (SDL_strcmp(target, layer.layerName) == 0) {
-                layer_available = true;
-                break;
-            }
-        }
-
-        if (!layer_available) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-std::vector<const char*> getInstanceExtensions() {
-    uint32_t num_instance_extensions;
-    const char* const* instance_extensions = SDL_Vulkan_GetInstanceExtensions(
-        &num_instance_extensions);
-    assert(instance_extensions != nullptr);
-
-    uint32_t num_extensions;
-    const char** extensions;
-    num_extensions = num_instance_extensions;
-    extensions = (const char**)(SDL_malloc(
-        num_extensions * sizeof(const char*)));
-    SDL_memcpy(&extensions[0], instance_extensions,
-        num_instance_extensions * sizeof(const char*));
-
-    std::vector<const char*> ext_vec;
-    for (uint32_t i = 0 ; i < num_extensions; i++) {
-        ext_vec.push_back(extensions[i]);
-    }
-
-    #ifndef NDEBUG
-    ext_vec.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-    #endif
-
-    SDL_free(extensions);
-    return ext_vec;
-}
 
 bool evaluatePhysicalDeviceProperties(vk::PhysicalDevice device) {
     assert(device != nullptr);
@@ -201,11 +151,26 @@ std::vector<char> readFile(std::string file_name) {
 
     return buffer;
 }
+
+vk::PipelineRasterizationStateCreateInfo buildRasterizerInfo() {
+    vk::PipelineRasterizationStateCreateInfo info = {};
+    info.depthClampEnable = VK_FALSE;
+    info.rasterizerDiscardEnable = VK_FALSE;
+    info.polygonMode = vk::PolygonMode::eFill;
+    info.cullMode = vk::CullModeFlagBits::eBack;
+    info.frontFace = vk::FrontFace::eCounterClockwise;
+    info.depthBiasEnable = VK_FALSE;
+    info.lineWidth = 1.0f;
+
+    return info;
+}
 }  // namespace
 
 namespace graphics::vk_renderer {
 VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
     assert(window != nullptr);
+
+    quill::Logger* log = quill::simple_logger();
 
     createInstance();
 
@@ -222,8 +187,19 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window)  {
     createCommandPool();
     loadDataToDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer, vertex_buffer_);
     loadDataToDevice(indices, vk::BufferUsageFlagBits::eIndexBuffer, index_buffer_);
+    quill::info(log, "Creating descriptor pool...");
+    createDescriptorPool();
+    quill::info(log, "Creating uniform buffers...");
+    createUniformBuffers();
+    quill::info(log, "Creating descriptor set layout...");
+    createDescriptorSetLayout();
+    quill::info(log, "Creating descriptor sets...");
+    createDescriptorSets();
+    quill::info(log, "Creating graphics pipeline...");
     createGraphicsPipeline();
+    quill::info(log, "Creating command buffers...");
     createCommandBuffers();
+    quill::info(log, "Creating synchronization objects...");
     createSyncObjects();
 }
 
@@ -248,30 +224,6 @@ VulkanRenderer::~VulkanRenderer() {
     device_.destroy();
     SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
     instance_.destroy();
-}
-
-void VulkanRenderer::createInstance() {
-    bool layers_supported = validationLayersSupported();
-
-    // Handle extensions
-    auto extensions = getInstanceExtensions();
-
-    vk::ApplicationInfo app_info = buildAppInfo();
-
-    vk::InstanceCreateInfo instance_info = {};
-    instance_info.pApplicationInfo = &app_info;
-    instance_info.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    instance_info.ppEnabledExtensionNames = extensions.data();
-    if (layers_supported) {
-        instance_info.enabledLayerCount = static_cast<uint32_t>(kValidationLayers.size());
-        instance_info.ppEnabledLayerNames = kValidationLayers.data();
-    } else {
-        instance_info.enabledLayerCount = 0;
-        instance_info.ppEnabledLayerNames = nullptr;
-    }
-
-    instance_ = vk::createInstance(instance_info);
-    assert(instance_ != nullptr);
 }
 
 uint32_t VulkanRenderer::getQueueFamilyIndex(vk::PhysicalDevice device) {
@@ -531,6 +483,28 @@ void VulkanRenderer::loadDataToDevice(const std::vector<T> data, const vk::Buffe
     device_.freeMemory(staging_buf.memory);
 }
 
+void VulkanRenderer::createUniformBuffers() {
+    if (!uniform_buffers_.empty()) {
+        for (BufferHandle buf : uniform_buffers_) {
+            device_.destroyBuffer(buf.buffer);
+            device_.unmapMemory(buf.memory);
+            device_.freeMemory(buf.memory);
+        }
+        uniform_buffers_.clear();
+        uniform_buffer_maps_.clear();
+    }
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
+        vk::DeviceSize buf_size = sizeof(UniformBufferObject);
+        BufferHandle buf = createBuffer(buf_size,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            vk::BufferUsageFlagBits::eUniformBuffer);
+        uniform_buffers_.emplace_back(std::move(buf));
+        uniform_buffer_maps_.emplace_back(
+            device_.mapMemory(uniform_buffers_[i].memory, 0, buf_size));
+    }
+}
+
 uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
                                         const vk::MemoryPropertyFlags prop_flags) {
   assert(physical_device_ != nullptr);
@@ -546,30 +520,36 @@ uint32_t VulkanRenderer::findMemoryType(const uint32_t type_filter,
   throw std::runtime_error("Failed to find suitable memory type!");
 }
 
+void VulkanRenderer::createDescriptorSetLayout() {
+    assert(device_ != nullptr);
+
+    vk::DescriptorSetLayoutBinding ubo_binding;
+    ubo_binding.binding = 0;
+    ubo_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    ubo_binding.descriptorCount = 1;
+    ubo_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+
+    vk::DescriptorSetLayoutCreateInfo create_info;
+    create_info.bindingCount = 1;
+    create_info.pBindings = &ubo_binding;
+
+    descriptor_set_layout_ = device_.createDescriptorSetLayout(create_info);
+
+    assert(descriptor_set_layout_ != nullptr);
+}
+
 vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() {
     assert(device_ != nullptr);
 
     vk::PipelineLayout layout;
     vk::PipelineLayoutCreateInfo layout_info = {};
-    layout_info.setLayoutCount = 0;
+    layout_info.setLayoutCount = 1;
+    layout_info.pSetLayouts = &descriptor_set_layout_;
     layout_info.pushConstantRangeCount = 0;
 
     layout = device_.createPipelineLayout(layout_info);
     assert(layout != nullptr);
     return layout;
-}
-
-vk::PipelineRasterizationStateCreateInfo buildRasterizerInfo() {
-    vk::PipelineRasterizationStateCreateInfo info = {};
-    info.depthClampEnable = VK_FALSE;
-    info.rasterizerDiscardEnable = VK_FALSE;
-    info.polygonMode = vk::PolygonMode::eFill;
-    info.cullMode = vk::CullModeFlagBits::eBack;
-    info.frontFace = vk::FrontFace::eClockwise;
-    info.depthBiasEnable = VK_FALSE;
-    info.lineWidth = 1.0f;
-
-    return info;
 }
 
 bool VulkanRenderer::createGraphicsPipeline() {
@@ -690,6 +670,54 @@ void VulkanRenderer::createCommandBuffers() {
     assert(command_buffers_.size() == kMaxFramesInFlight);
 }
 
+void VulkanRenderer::createDescriptorPool() {
+    assert(device_ != nullptr);
+
+    vk::DescriptorPoolSize size;
+    size.type = vk::DescriptorType::eUniformBuffer;
+    size.descriptorCount = kMaxFramesInFlight;
+
+    vk::DescriptorPoolCreateInfo create_info;
+    create_info.maxSets = kMaxFramesInFlight;
+    create_info.poolSizeCount = 1;
+    create_info.pPoolSizes = &size;
+
+    descriptor_pool_ = device_.createDescriptorPool(create_info);
+}
+
+void VulkanRenderer::createDescriptorSets() {
+    assert(device_ != nullptr && descriptor_pool_ != nullptr);
+
+    std::vector<vk::DescriptorSetLayout> layouts(kMaxFramesInFlight,
+                                                 descriptor_set_layout_);
+
+    vk::DescriptorSetAllocateInfo alloc_info;
+    alloc_info.descriptorPool = descriptor_pool_;
+    alloc_info.descriptorSetCount = kMaxFramesInFlight;
+    alloc_info.pSetLayouts = layouts.data();
+
+    descriptor_sets_ = device_.allocateDescriptorSets(alloc_info);
+
+    for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
+        vk::DescriptorBufferInfo buf_info;
+        buf_info.buffer = uniform_buffers_[i].buffer;
+        buf_info.offset = 0;
+        buf_info.range = VK_WHOLE_SIZE;
+
+        vk::WriteDescriptorSet write_info;
+        write_info.dstSet = descriptor_sets_[i];
+        write_info.dstBinding = 0;
+        write_info.dstArrayElement = 0;
+        write_info.descriptorCount = 1;
+        write_info.descriptorType = vk::DescriptorType::eUniformBuffer;
+        write_info.pBufferInfo = &buf_info;
+
+        device_.updateDescriptorSets(write_info, {});
+    }
+
+    assert(descriptor_sets_.size() == kMaxFramesInFlight);
+}
+
 void VulkanRenderer::transitionImageLayout(const uint32_t image_index,
         const vk::ImageLayout old_layout, const vk::ImageLayout new_layout,
         const vk::AccessFlags2 src_access_mask, const vk::AccessFlags2 dst_access_mask,
@@ -760,7 +788,11 @@ bool VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
 
     command_buffers_[frame_index_].setViewport(0, 1, &viewport);
     command_buffers_[frame_index_].setScissor(0, 1, &scissor);
-    command_buffers_[frame_index_].drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    command_buffers_[frame_index_].bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                                      graphics_pipeline_layout_, 0,
+                                                      descriptor_sets_[frame_index_], nullptr);
+    command_buffers_[frame_index_].drawIndexed(static_cast<uint32_t>(indices.size()),
+                                               1, 0, 0, 0);
     command_buffers_[frame_index_].endRendering();
 
     transitionImageLayout(image_index, vk::ImageLayout::eColorAttachmentOptimal,
@@ -799,8 +831,39 @@ bool VulkanRenderer::createSyncObjects() {
     return true;
 }
 
+using Time = std::chrono::time_point<
+    std::chrono::system_clock,
+    std::chrono::duration<long, std::ratio<1, 1000000000>>>;
+
+void VulkanRenderer::updateUniformBuffer(uint32_t img_idx, Time start) {
+    assert(swapchain_.swapchain != nullptr);
+
+    Time end = std::chrono::high_resolution_clock::now();
+
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(end - start).count();
+
+    UniformBufferObject ubo;
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+                            glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                           glm::vec3(0.0f, 0.0f, 0.0f),
+                           glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(glm::radians(45.0f),
+        static_cast<float>(swapchain_.extent.width) / static_cast<float>(swapchain_.extent.height),
+        0.1f, 10.0f);
+
+    SDL_memcpy(uniform_buffer_maps_[img_idx], &ubo, sizeof(ubo));
+}
+
 bool VulkanRenderer::drawFrame() {
     assert(device_ != nullptr);
+    assert(command_buffers_.size() == kMaxFramesInFlight);
+    assert(uniform_buffers_.size() == kMaxFramesInFlight);
+
+    quill::Logger* log = quill::simple_logger();
+    quill::info(log, "Drawing frame...");
+
+    Time start_time = std::chrono::high_resolution_clock::now();
 
     vk::Result result = device_.waitForFences(1, &draw_fences_[frame_index_],
                                               VK_TRUE, UINT64_MAX);
@@ -828,6 +891,8 @@ bool VulkanRenderer::drawFrame() {
 
     command_buffers_[frame_index_].reset();
     recordCommandBuffer(image_index);
+
+    updateUniformBuffer(image_index, start_time);
 
     vk::PipelineStageFlags wait_dst_stage_mask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
