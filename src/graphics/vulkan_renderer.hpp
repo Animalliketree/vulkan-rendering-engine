@@ -12,7 +12,7 @@
 
 namespace graphics::vk_renderer {
 struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 color;
 
     static vk::VertexInputBindingDescription getBindingDescription() {
@@ -22,7 +22,7 @@ struct Vertex {
     static std::array<vk::VertexInputAttributeDescription, 2>
     getAttributeDescription() {
         return {{
-            {0, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos)},
+            {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)},
             {1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)}}};
     }
 };

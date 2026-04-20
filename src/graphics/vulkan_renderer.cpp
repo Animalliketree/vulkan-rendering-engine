@@ -25,19 +25,27 @@
 
 namespace {
 struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 const std::vector<graphics::vk_renderer::Vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{-0.5f, 0.5f},  {0.0f, 1.0f, 0.0f}},
-    {{0.5f,  -0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{0.5f,  0.5f},  {1.0f, 1.0f, 1.0f}},
+    {{-0.5f, -0.5f, 0.25f}, {1.0f, 0.0f, 0.0f}},
+    {{-0.5f, 0.5f,  0.25f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f,  -0.5f, 0.25f}, {0.0f, 0.0f, 1.0f}},
+    {{0.5f,  0.5f,  0.25f}, {1.0f, 1.0f, 1.0f}},
+
+    {{-0.5f, -0.5f, -0.25f}, {1.0f, 0.0f, 0.0f}},
+    {{-0.5f, 0.5f,  -0.25f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f,  -0.5f, -0.25f}, {0.0f, 0.0f, 1.0f}},
+    {{0.5f,  0.5f,  -0.25f}, {1.0f, 1.0f, 1.0f}}
 };
 
-const std::vector<uint16_t> indices = {0, 2, 3, 3, 1, 0};
+const std::vector<uint16_t> indices = {
+    0, 2, 3, 3, 1, 0,
+    4, 6, 7, 7, 5, 4,
+};
 }  // namespace
 
 namespace graphics::vk_renderer {
