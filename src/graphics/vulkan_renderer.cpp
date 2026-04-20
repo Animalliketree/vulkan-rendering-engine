@@ -34,7 +34,7 @@ const std::vector<graphics::vk_renderer::Vertex> vertices = {
     {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{-0.5f, 0.5f},  {0.0f, 1.0f, 0.0f}},
     {{0.5f,  -0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{0.5f,  0.5f},  {1.0f, 1.0f, 1.0f}}
+    {{0.5f,  0.5f},  {1.0f, 1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {0, 2, 3, 3, 1, 0};
@@ -361,7 +361,7 @@ using Time = std::chrono::time_point<
 std::chrono::system_clock,
 std::chrono::duration<int64_t, std::ratio<1, 1000000000>>>;
 
-void VulkanRenderer::updateUniformBuffer(uint32_t img_idx, Time start) {
+void VulkanRenderer::updateUniformBuffer(uint32_t img_idx) {
     assert(swapchain_.swapchain != nullptr);
     const float aspect_ratio =
         static_cast<float>(swapchain_.extent.width)
@@ -370,7 +370,7 @@ void VulkanRenderer::updateUniformBuffer(uint32_t img_idx, Time start) {
     Time end = std::chrono::high_resolution_clock::now();
 
     float time = std::chrono::duration<float, std::chrono::seconds::period>
-        (end - start).count();
+        (end - start_time_).count();
 
     UniformBufferObject ubo;
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
@@ -379,8 +379,9 @@ void VulkanRenderer::updateUniformBuffer(uint32_t img_idx, Time start) {
                            glm::vec3(0.0f, 0.0f, 0.0f),
                            glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.proj = glm::perspective(glm::radians(45.0f),
-        aspect_ratio,
-        0.1f, 10.0f);
+        aspect_ratio, 0.1f, 10.0f);
+
+    ubo.proj[1][1] *= -1;  // GLM assumes inverted axis so we flip it
 
     SDL_memcpy(uniform_buffer_maps_[img_idx % kMaxFramesInFlight], &ubo,
                sizeof(ubo));
@@ -390,11 +391,6 @@ bool VulkanRenderer::drawFrame() {
     assert(device_ != nullptr);
     assert(command_buffers_.size() == kMaxFramesInFlight);
     assert(uniform_buffers_.size() == kMaxFramesInFlight);
-
-    quill::Logger* log = quill::simple_logger();
-    quill::info(log, "Drawing frame...");
-
-    Time start_time = std::chrono::high_resolution_clock::now();
 
     vk::Result result = device_.waitForFences(1, &draw_fences_[frame_index_],
                                               VK_TRUE, UINT64_MAX);
@@ -424,7 +420,7 @@ bool VulkanRenderer::drawFrame() {
     command_buffers_[frame_index_].reset();
     recordCommandBuffer(image_index);
 
-    updateUniformBuffer(image_index, start_time);
+    updateUniformBuffer(image_index);
 
     vk::PipelineStageFlags wait_dst_stage_mask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;

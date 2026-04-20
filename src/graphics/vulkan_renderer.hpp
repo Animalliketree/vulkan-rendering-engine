@@ -133,7 +133,7 @@ class VulkanRenderer {
 
     void createSyncObjects() noexcept;
 
-    void updateUniformBuffer(uint32_t img_idx, Time start);
+    void updateUniformBuffer(uint32_t img_idx);
 
     vk::Instance instance_ = nullptr;
     vk::PhysicalDevice physical_device_ = nullptr;
@@ -165,6 +165,8 @@ class VulkanRenderer {
 
     uint32_t frame_index_ = 0;
     bool framebuffer_resized_ = false;
+
+    Time start_time_ = std::chrono::high_resolution_clock::now();
 };
 }  // namespace graphics::vk_renderer
 
