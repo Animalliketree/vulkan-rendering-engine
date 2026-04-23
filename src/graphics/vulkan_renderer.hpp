@@ -4,6 +4,7 @@
 #define SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 
 #include "vulkan/vulkan.hpp"
+#include "vulkan_device_handle.hpp"
 #include <SDL3/SDL_video.h>
 #include <cstdint>
 #include <chrono>
@@ -60,41 +61,32 @@ class VulkanRenderer {
     explicit VulkanRenderer(SDL_Window* window) noexcept;
     ~VulkanRenderer() noexcept;
 
-    inline void flagResized() { framebuffer_resized_ = true; }
+    inline void flagResized() noexcept { framebuffer_resized_ = true; }
 
     bool drawFrame();
 
  private:
+    const vulkan::device::VulkanDeviceHandle device_;
     const uint32_t kMaxFramesInFlight = 2;
 
     using Time = std::chrono::time_point<
         std::chrono::system_clock,
         std::chrono::duration<int64_t, std::ratio<1, 1000000000>>>;
 
-    void createInstance() noexcept;
-
-    void selectPhysicalDevice() noexcept;
-
-    uint32_t getQueueFamilyIndex(vk::PhysicalDevice device) const noexcept;
-
-    void createLogicalDevice() noexcept;
-
-    vk::SurfaceFormatKHR chooseSwapSurfaceFormat();
-
-    vk::PresentModeKHR chooseSwapPresentMode();
-
+    // Requires device_
     void createSwapchain(vk::SwapchainKHR old_swapchain) noexcept;
 
     void recreateSwapchain();
+
+    void createShaderModule(const std::vector<char>& code) noexcept;
 
     vk::ImageView createImageView(
         const vk::Image& img,
         const vk::Format format,
         const vk::ImageAspectFlags flags) noexcept;
 
+    // Requires swapchain
     void createImageViews() noexcept;
-
-    void createShaderModule(const std::vector<char>& code) noexcept;
 
     BufferHandle createBuffer(
         const vk::DeviceSize size,
@@ -114,10 +106,6 @@ class VulkanRenderer {
 
     void createUniformBuffers() noexcept;
 
-    uint32_t findMemoryType(
-        const uint32_t type_filter,
-        const vk::MemoryPropertyFlags prop_flags) const noexcept;
-
     void createDescriptorSetLayout() noexcept;
 
     vk::PipelineLayout createGraphicsPipelineLayout() noexcept;
@@ -125,11 +113,6 @@ class VulkanRenderer {
     void createGraphicsPipeline() noexcept;
 
     void createCommandPool() noexcept;
-
-    vk::Format findDesiredFormat(
-        const std::vector<vk::Format>& candidates,
-        const vk::ImageTiling tiling,
-        const vk::FormatFeatureFlags features) const noexcept;
 
     void createDepthResources() noexcept;
 
@@ -156,12 +139,7 @@ class VulkanRenderer {
 
     void updateUniformBuffer(uint32_t img_idx);
 
-    vk::Instance instance_ = nullptr;
-    vk::PhysicalDevice physical_device_ = nullptr;
-    vk::Device device_ = nullptr;
-    uint32_t graphics_qf_idx_ = UINT32_MAX;
-    vk::Queue graphics_queue_ = nullptr;
-
+    uint32_t frame_i_ = 0;
     VkSurfaceKHR surface_ = nullptr;
     SwapchainHandle swapchain_ = {};
 
@@ -184,12 +162,11 @@ class VulkanRenderer {
     std::vector<vk::Semaphore> sem_render_done_;
     std::vector<vk::Fence> draw_fences_;
 
-    uint32_t frame_i_ = 0;
-    bool framebuffer_resized_ = false;
-
     DepthImage depth_image_;
 
     Time start_time_ = std::chrono::high_resolution_clock::now();
+
+    bool framebuffer_resized_ = false;
 };
 }  // namespace graphics::vk_renderer
 
