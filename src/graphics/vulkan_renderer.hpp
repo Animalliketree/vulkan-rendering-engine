@@ -8,6 +8,7 @@
 #include <SDL3/SDL_video.h>
 #include <cstdint>
 #include <chrono>
+#include <glm/ext/vector_float3.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
@@ -54,6 +55,12 @@ struct DepthImage {
     vk::DeviceMemory memory = nullptr;
     vk::ImageView view = nullptr;
     vk::Format format;
+};
+
+struct Camera {
+    glm::vec3 pos = glm::vec3(0.0f);
+    glm::vec3 dir = glm::vec3(0.0f);
+    glm::vec3 up = glm::vec3(0.0f);
 };
 
 class VulkanRenderer {
@@ -167,6 +174,8 @@ class VulkanRenderer {
     Time start_time_ = std::chrono::high_resolution_clock::now();
 
     bool framebuffer_resized_ = false;
+
+    Camera cam_;
 };
 }  // namespace graphics::vk_renderer
 
