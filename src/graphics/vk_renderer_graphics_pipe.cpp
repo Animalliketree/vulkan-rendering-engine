@@ -1,11 +1,14 @@
 /* Copyright 2026 Alix Boivin */
 
+#include <cassert>
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
 #include "../graphics/vulkan_renderer.hpp"
+#include "vulkan/vulkan.hpp"
 
 namespace {
 constexpr char kProjectRoot[] =
@@ -71,95 +74,79 @@ vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
     return layout;
 }
 
+std::vector<vk::PipelineShaderStageCreateInfo>
+buildShaderStageInfo(vk::ShaderModule module) noexcept {
+    assert(module != nullptr);
+
+    vk::PipelineShaderStageCreateInfo vert_stage_info{{},
+        vk::ShaderStageFlagBits::eVertex, module, "vertMain"};
+
+    vk::PipelineShaderStageCreateInfo frag_stage_info{{},
+        vk::ShaderStageFlagBits::eFragment, module, "fragMain"};
+
+    return {vert_stage_info, frag_stage_info};
+}
+
 void VulkanRenderer::createGraphicsPipeline() noexcept {
     std::vector<char> code =
         readFile(std::string(kProjectRoot) + "/" + kShaderFile);
     createShaderModule(code);
 
-    vk::PipelineShaderStageCreateInfo vert_stage_info = {};
-    vert_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
-    vert_stage_info.module = graphics_pipeline_.shader_module;
-    vert_stage_info.pName = "vertMain";
+    auto stage_info = buildShaderStageInfo(graphics_pipeline_.shader_module);
 
-    vk::PipelineShaderStageCreateInfo frag_stage_info = {};
-    frag_stage_info.stage = vk::ShaderStageFlagBits::eFragment;
-    frag_stage_info.module = graphics_pipeline_.shader_module;
-    frag_stage_info.pName = "fragMain";
-
-    vk::PipelineShaderStageCreateInfo stage_info[] = {vert_stage_info,
-                                                      frag_stage_info};
-
-    vk::VertexInputBindingDescription binding_description =
-        Vertex::getBindingDescription();
+    auto binding_description = Vertex::getBindingDescription();
     auto attribute_descriptions = Vertex::getAttributeDescription();
 
-    vk::PipelineVertexInputStateCreateInfo vertex_input_info = {};
-    vertex_input_info.vertexAttributeDescriptionCount =
-        attribute_descriptions.size();
-    vertex_input_info.pVertexAttributeDescriptions =
-        attribute_descriptions.data();
-    vertex_input_info.vertexBindingDescriptionCount = 1;
-    vertex_input_info.pVertexBindingDescriptions = &binding_description;
+    vk::PipelineVertexInputStateCreateInfo vertex_input_info{{}, 1,
+        &binding_description, attribute_descriptions.size(),
+        attribute_descriptions.data()};
 
-    vk::PipelineInputAssemblyStateCreateInfo assembly_info = {};
-    assembly_info.topology = vk::PrimitiveTopology::eTriangleList;
+    vk::PipelineInputAssemblyStateCreateInfo assembly_info{{},
+        vk::PrimitiveTopology::eTriangleList};
 
     vk::Viewport viewport{0.0f, 0.0f,
                           static_cast<float>(swapchain_.extent.width),
                           static_cast<float>(swapchain_.extent.height),
                           0.0f, 1.0f};
 
-    vk::Rect2D scissor{vk::Offset2D{0, 0}, swapchain_.extent};
+    vk::Rect2D scissor{{0, 0}, swapchain_.extent};
 
     std::vector<vk::DynamicState> dynamic_states = {
         vk::DynamicState::eViewport,
         vk::DynamicState::eScissor};
 
-    vk::PipelineDynamicStateCreateInfo dyn_state_info = {};
-    dyn_state_info.dynamicStateCount =
-        static_cast<uint32_t>(dynamic_states.size());
-    dyn_state_info.pDynamicStates = dynamic_states.data();
+    vk::PipelineDynamicStateCreateInfo dyn_state_info{{},
+        static_cast<uint32_t>(dynamic_states.size()), dynamic_states.data()};
 
-    vk::PipelineViewportStateCreateInfo viewport_info = {};
-    viewport_info.viewportCount = 1;
-    viewport_info.pViewports = &viewport;
-    viewport_info.scissorCount = 1;
-    viewport_info.pScissors = &scissor;
+    vk::PipelineViewportStateCreateInfo viewport_info{{},
+        1, &viewport, 1, &scissor};
 
-    vk::PipelineRasterizationStateCreateInfo rasterizer_info =
-        buildRasterizerInfo();
+    auto rasterizer_info = buildRasterizerInfo();
 
-    vk::PipelineMultisampleStateCreateInfo multisample_info = {};
-    multisample_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
-    multisample_info.sampleShadingEnable = VK_FALSE;
+    vk::PipelineMultisampleStateCreateInfo multisample_info{{},
+        vk::SampleCountFlagBits::e1, vk::False};
 
-    vk::PipelineColorBlendAttachmentState color_blend_attach = {};
-    color_blend_attach.blendEnable = VK_FALSE;
+    vk::PipelineColorBlendAttachmentState color_blend_attach{vk::False};
     color_blend_attach.colorWriteMask = vk::ColorComponentFlagBits::eR
         | vk::ColorComponentFlagBits::eG
         | vk::ColorComponentFlagBits::eB
         | vk::ColorComponentFlagBits::eA;
 
-    vk::PipelineColorBlendStateCreateInfo color_blend_info = {};
-    color_blend_info.logicOpEnable = VK_FALSE;
-    color_blend_info.logicOp = vk::LogicOp::eCopy;
-    color_blend_info.attachmentCount = 1;
-    color_blend_info.pAttachments = &color_blend_attach;
+    vk::PipelineColorBlendStateCreateInfo color_blend_info{{},
+        vk::False, vk::LogicOp::eCopy, 1, &color_blend_attach};
 
     vk::PipelineDepthStencilStateCreateInfo depth_stencil_info{{},
         vk::True, vk::True, vk::CompareOp::eLess, vk::False, vk::False};
 
     graphics_pipeline_.layout = createGraphicsPipelineLayout();
 
-    vk::PipelineRenderingCreateInfo rendering_info = {};
-    rendering_info.colorAttachmentCount = 1;
-    rendering_info.pColorAttachmentFormats = &swapchain_.format.format;
-    rendering_info.depthAttachmentFormat = depth_image_.format;
+    vk::PipelineRenderingCreateInfo rendering_info{{},
+        1, &swapchain_.format.format, depth_image_.format};
 
     vk::GraphicsPipelineCreateInfo pipeline_info = {};
     pipeline_info.pNext = &rendering_info;
-    pipeline_info.stageCount = 2;
-    pipeline_info.pStages = stage_info;
+    pipeline_info.stageCount = static_cast<uint32_t>(stage_info.size());
+    pipeline_info.pStages = stage_info.data();
     pipeline_info.pVertexInputState = &vertex_input_info;
     pipeline_info.pInputAssemblyState = &assembly_info;
     pipeline_info.pViewportState = &viewport_info;
@@ -170,8 +157,6 @@ void VulkanRenderer::createGraphicsPipeline() noexcept {
     pipeline_info.pDynamicState = &dyn_state_info;
     pipeline_info.layout = graphics_pipeline_.layout;
     pipeline_info.renderPass = nullptr;
-    pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
-    pipeline_info.basePipelineIndex = -1;
 
     graphics_pipeline_.pipeline = device_.createGraphicsPipelines(
         nullptr, pipeline_info).value[0];

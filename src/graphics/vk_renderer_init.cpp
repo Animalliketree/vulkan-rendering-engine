@@ -85,7 +85,7 @@ void VulkanRenderer::createInstance() noexcept {
 
     vk::ApplicationInfo app_info = buildAppInfo();
 
-    vk::InstanceCreateInfo instance_info = {};
+    vk::InstanceCreateInfo instance_info;
     instance_info.pApplicationInfo = &app_info;
     instance_info.enabledExtensionCount =
         static_cast<uint32_t>(extensions.size());

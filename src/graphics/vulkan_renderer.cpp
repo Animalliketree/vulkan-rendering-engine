@@ -13,7 +13,6 @@
 #include <quill/LogFunctions.h>
 #include <cassert>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
@@ -97,9 +96,9 @@ VulkanRenderer::~VulkanRenderer() noexcept {
     device_.freeMemory(depth_image_.memory);
 
     for (VkFence fence : draw_fences_) device_.destroyFence(fence);
-    for (VkSemaphore semaphore : render_finished_semaphores_)
+    for (VkSemaphore semaphore : sem_render_done_)
         device_.destroySemaphore(semaphore);
-    for (VkSemaphore semaphore : present_complete_semaphores_)
+    for (VkSemaphore semaphore : sem_present_done_)
         device_.destroySemaphore(semaphore);
 
     device_.destroyPipeline(graphics_pipeline_.pipeline);
@@ -131,27 +130,21 @@ VulkanRenderer::~VulkanRenderer() noexcept {
     instance_.destroy();
 }
 
-BufferHandle VulkanRenderer::createBuffer(
-        const vk::DeviceSize size,
+BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
         const vk::MemoryPropertyFlags props,
         const vk::BufferUsageFlags usage) noexcept {
     BufferHandle buf;
-    vk::BufferCreateInfo buf_info;
-    buf_info.size = size;
-    buf_info.usage = usage;
-    buf_info.sharingMode = vk::SharingMode::eExclusive;
+    vk::BufferCreateInfo buf_info{{}, size, usage,
+                                  vk::SharingMode::eExclusive};
     buf.buffer = device_.createBuffer(buf_info);
 
     vk::MemoryRequirements mem_req = device_.getBufferMemoryRequirements(
-        buf.buffer);
+                                                                   buf.buffer);
 
-    vk::MemoryAllocateInfo alloc_info;
-    alloc_info.allocationSize = mem_req.size;
-    alloc_info.memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits,
-                                                props);
+    vk::MemoryAllocateInfo alloc_info{mem_req.size,
+                                findMemoryType(mem_req.memoryTypeBits, props)};
     buf.memory = device_.allocateMemory(alloc_info);
 
-    buf.offset = 0;
     device_.bindBufferMemory(buf.buffer, buf.memory, buf.offset);
     return buf;
 }
@@ -260,6 +253,12 @@ vk::Format VulkanRenderer::findDesiredFormat(
 }
 
 void VulkanRenderer::createDepthResources() noexcept {
+    if (depth_image_.image != nullptr) {
+        device_.destroyImageView(depth_image_.view);
+        device_.freeMemory(depth_image_.memory);
+        device_.destroyImage(depth_image_.image);
+    }
+
     const std::vector<vk::Format> candidates = {
         vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
         vk::Format::eD24UnormS8Uint};
@@ -313,11 +312,11 @@ void VulkanRenderer::transitionImageLayout(const vk::Image& img,
         VK_QUEUE_FAMILY_IGNORED, img, {aspect, 0, 1, 0, 1}, nullptr};
 
     vk::DependencyInfo dep_info{{}, 0, {}, 0, {}, 1, &barrier, nullptr};
-    command_buffers_[frame_index_].pipelineBarrier2(&dep_info);
+    command_buffers_[frame_i_].pipelineBarrier2(&dep_info);
 }
 
 void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
-    vk::CommandBuffer& cmd_buf = command_buffers_[frame_index_];
+    vk::CommandBuffer& cmd_buf = command_buffers_[frame_i_];
 
     cmd_buf.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
@@ -355,12 +354,8 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
         vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
         depth_value, nullptr};
 
-    vk::RenderingInfo render_info = {};
-    render_info.renderArea = vk::Rect2D{{0, 0}, swapchain_.extent};
-    render_info.layerCount = 1;
-    render_info.colorAttachmentCount = 1;
-    render_info.pColorAttachments = &color_attach_info;
-    render_info.pDepthAttachment = &depth_attach_info;
+    vk::RenderingInfo render_info{{}, {{0, 0}, swapchain_.extent}, 1, {}, 1,
+                                  &color_attach_info, &depth_attach_info};
     cmd_buf.beginRendering(&render_info);
 
     cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics,
@@ -381,7 +376,7 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
     cmd_buf.setScissor(0, 1, &scissor);
     cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                graphics_pipeline_.layout, 0,
-                               descriptor_sets_[frame_index_], nullptr);
+                               descriptor_sets_[frame_i_], nullptr);
     cmd_buf.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
     cmd_buf.endRendering();
 
@@ -397,30 +392,22 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
 }
 
 void VulkanRenderer::createSyncObjects() noexcept {
-    assert(present_complete_semaphores_.empty()
-            && render_finished_semaphores_.empty()
-            && draw_fences_.empty());
-    vk::SemaphoreCreateInfo semaphore_info = {};
+    assert(device_ != nullptr && sem_present_done_.empty()
+           && sem_render_done_.empty() && draw_fences_.empty());
 
-    vk::FenceCreateInfo fence_info = {};
-    fence_info.flags = vk::FenceCreateFlagBits::eSignaled;
+    vk::FenceCreateInfo fence_info{vk::FenceCreateFlagBits::eSignaled};
 
-    render_finished_semaphores_.resize(swapchain_.images.size());
-    for (size_t i = 0; i < swapchain_.images.size(); i++) {
-        render_finished_semaphores_[i] =
-            device_.createSemaphore(semaphore_info);
-        assert(render_finished_semaphores_[i] != nullptr);
+    for (uint32_t i = 0; i < swapchain_.images.size(); i++) {
+        sem_render_done_.push_back(device_.createSemaphore({}));
     }
 
-    present_complete_semaphores_.resize(kMaxFramesInFlight);
-    draw_fences_.resize(kMaxFramesInFlight);
-    for (size_t i = 0; i < kMaxFramesInFlight; i++) {
-        present_complete_semaphores_[i] =
-            device_.createSemaphore(semaphore_info);
-        draw_fences_[i] = device_.createFence(fence_info);
-        assert(present_complete_semaphores_[i] != nullptr
-               && draw_fences_[i] != nullptr);
+    for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
+        sem_present_done_.push_back(device_.createSemaphore({}));
+        draw_fences_.push_back(device_.createFence(fence_info));
     }
+
+    assert(sem_render_done_.size() == swapchain_.images.size());
+    assert(sem_present_done_.size() == kMaxFramesInFlight);
 }
 
 using Time = std::chrono::time_point<
@@ -458,14 +445,14 @@ bool VulkanRenderer::drawFrame() {
     assert(command_buffers_.size() == kMaxFramesInFlight);
     assert(uniform_buffers_.size() == kMaxFramesInFlight);
 
-    vk::Result result = device_.waitForFences(1, &draw_fences_[frame_index_],
+    vk::Result result = device_.waitForFences(1, &draw_fences_[frame_i_],
                                               VK_TRUE, UINT64_MAX);
     assert(result == vk::Result::eSuccess);
 
     uint32_t img_i;
     result = device_.acquireNextImageKHR(
         swapchain_.swapchain, UINT64_MAX,
-        present_complete_semaphores_[frame_index_], nullptr, &img_i);
+        sem_present_done_[frame_i_], nullptr, &img_i);
     switch (result) {
         case vk::Result::eErrorOutOfDateKHR:
             recreateSwapchain();
@@ -479,30 +466,25 @@ bool VulkanRenderer::drawFrame() {
             throw std::runtime_error("Failed to acquire next image!");
     }
 
-    result = device_.resetFences(1, &draw_fences_[frame_index_]);
+    result = device_.resetFences(1, &draw_fences_[frame_i_]);
     assert(result == vk::Result::eSuccess);
 
-    command_buffers_[frame_index_].reset();
+    command_buffers_[frame_i_].reset();
     recordCommandBuffer(img_i);
 
     updateUniformBuffer(img_i);
 
     vk::PipelineStageFlags wait_dst_stage =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    vk::SubmitInfo submitInfo{1, &present_complete_semaphores_[frame_index_],
+    vk::SubmitInfo submitInfo{1, &sem_present_done_[frame_i_],
                               &wait_dst_stage, 1,
-                              &command_buffers_[frame_index_], 1,
-                              &render_finished_semaphores_[img_i]};
+                              &command_buffers_[frame_i_], 1,
+                              &sem_render_done_[img_i]};
 
-    result = graphics_queue_.submit(1, &submitInfo,
-                                    draw_fences_[frame_index_]);
+    result = graphics_queue_.submit(1, &submitInfo, draw_fences_[frame_i_]);
 
-    vk::PresentInfoKHR present_info = {};
-    present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &render_finished_semaphores_[img_i];
-    present_info.swapchainCount = 1;
-    present_info.pSwapchains = &swapchain_.swapchain;
-    present_info.pImageIndices = &img_i;
+    vk::PresentInfoKHR present_info{1, &sem_render_done_[img_i], 1,
+                                    &swapchain_.swapchain, &img_i};
 
     result = graphics_queue_.presentKHR(&present_info);
     switch (result) {
@@ -523,7 +505,7 @@ bool VulkanRenderer::drawFrame() {
         recreateSwapchain();
     }
 
-    frame_index_ = (frame_index_ + 1) % kMaxFramesInFlight;
+    frame_i_ = (frame_i_ + 1) % kMaxFramesInFlight;
     return true;
 }
 }  // namespace graphics::vk_renderer

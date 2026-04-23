@@ -127,5 +127,6 @@ void VulkanRenderer::recreateSwapchain() {
 
     createSwapchain(swapchain_.swapchain);
     createImageViews();
+    createDepthResources();
 }
 }  // namespace graphics::vk_renderer

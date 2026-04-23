@@ -180,11 +180,11 @@ class VulkanRenderer {
 
     GraphicsPipelineHandle graphics_pipeline_;
 
-    std::vector<vk::Semaphore> present_complete_semaphores_;
-    std::vector<vk::Semaphore> render_finished_semaphores_;
+    std::vector<vk::Semaphore> sem_present_done_;
+    std::vector<vk::Semaphore> sem_render_done_;
     std::vector<vk::Fence> draw_fences_;
 
-    uint32_t frame_index_ = 0;
+    uint32_t frame_i_ = 0;
     bool framebuffer_resized_ = false;
 
     DepthImage depth_image_;
