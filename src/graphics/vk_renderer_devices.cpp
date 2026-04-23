@@ -20,8 +20,7 @@ bool evaluatePhysicalDeviceProperties(vk::PhysicalDevice device) {
 
     vk::PhysicalDeviceProperties props = device.getProperties();
 
-    if (props.apiVersion < VK_API_VERSION_1_4) return false;
-    else return true;
+    return props.apiVersion >= VK_API_VERSION_1_4;
 }
 
 bool evaluateDeviceExtensions(vk::PhysicalDevice device) {
@@ -58,14 +57,14 @@ bool evaluatePhysicalDeviceFeatures(vk::PhysicalDevice device) {
     features.pNext = &vk_1_3_features;
     device.getFeatures2(&features);
 
-    if (dynamic_state_features.extendedDynamicState == VK_FALSE
-        || vk_1_3_features.dynamicRendering == VK_FALSE) return false;
-    else return true;
+    return !(dynamic_state_features.extendedDynamicState == vk::False
+             || vk_1_3_features.dynamicRendering == vk::False);
 }
 }  // namespace
 
 namespace graphics::vk_renderer {
-uint32_t VulkanRenderer::getQueueFamilyIndex(vk::PhysicalDevice device) {
+uint32_t VulkanRenderer::getQueueFamilyIndex(
+        const vk::PhysicalDevice device) const noexcept {
     assert(device != nullptr);
 
     std::vector<vk::QueueFamilyProperties> props =
@@ -112,30 +111,23 @@ void VulkanRenderer::createLogicalDevice() noexcept {
     constexpr float kQueuePriority = 0.5f;
 
     graphics_qf_idx_ = getQueueFamilyIndex(physical_device_);
-    vk::DeviceQueueCreateInfo queue_info = {};
-    queue_info.queueCount = 1;
-    queue_info.queueFamilyIndex = graphics_qf_idx_;
-    queue_info.pQueuePriorities = &kQueuePriority;
+    vk::DeviceQueueCreateInfo queue_info{{}, graphics_qf_idx_, 1,
+                                         &kQueuePriority};
 
-    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT extended_features = {};
-    extended_features.extendedDynamicState = VK_TRUE;
+    vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT extended_features{
+                                                                     vk::True};
 
-    vk::PhysicalDeviceVulkan13Features vk_1_3_features = {};
+    vk::PhysicalDeviceVulkan13Features vk_1_3_features;
     vk_1_3_features.pNext = &extended_features;
     vk_1_3_features.dynamicRendering = VK_TRUE;
     vk_1_3_features.synchronization2 = VK_TRUE;
 
-    vk::PhysicalDeviceFeatures2 features_2 = {};
+    vk::PhysicalDeviceFeatures2 features_2;
     features_2.pNext = &vk_1_3_features;
 
-    vk::DeviceCreateInfo device_info = {};
-    device_info.pNext = &features_2;
-    device_info.queueCreateInfoCount = 1;
-    device_info.pQueueCreateInfos = &queue_info;
-    device_info.enabledExtensionCount = static_cast<uint32_t>(
-        kRequiredDeviceExtensions.size());
-    device_info.ppEnabledExtensionNames =
-        kRequiredDeviceExtensions.data();
+    vk::DeviceCreateInfo device_info{{}, 1, &queue_info, 0, {},
+        static_cast<uint32_t>(kRequiredDeviceExtensions.size()),
+        kRequiredDeviceExtensions.data(), {}, &features_2};
 
     device_ = physical_device_.createDevice(device_info);
     assert(device_ != nullptr);
@@ -143,7 +135,7 @@ void VulkanRenderer::createLogicalDevice() noexcept {
 
 uint32_t VulkanRenderer::findMemoryType(
         const uint32_t type_filter,
-        const vk::MemoryPropertyFlags prop_flags) noexcept {
+        const vk::MemoryPropertyFlags prop_flags) const noexcept {
     assert(physical_device_ != nullptr);
 
     vk::PhysicalDeviceMemoryProperties props =

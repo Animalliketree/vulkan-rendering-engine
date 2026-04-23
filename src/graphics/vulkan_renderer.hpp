@@ -75,7 +75,7 @@ class VulkanRenderer {
 
     void selectPhysicalDevice() noexcept;
 
-    uint32_t getQueueFamilyIndex(vk::PhysicalDevice device);
+    uint32_t getQueueFamilyIndex(vk::PhysicalDevice device) const noexcept;
 
     void createLogicalDevice() noexcept;
 
@@ -116,7 +116,7 @@ class VulkanRenderer {
 
     uint32_t findMemoryType(
         const uint32_t type_filter,
-        const vk::MemoryPropertyFlags prop_flags) noexcept;
+        const vk::MemoryPropertyFlags prop_flags) const noexcept;
 
     void createDescriptorSetLayout() noexcept;
 
@@ -129,7 +129,7 @@ class VulkanRenderer {
     vk::Format findDesiredFormat(
         const std::vector<vk::Format>& candidates,
         const vk::ImageTiling tiling,
-        const vk::FormatFeatureFlags features) noexcept;
+        const vk::FormatFeatureFlags features) const noexcept;
 
     void createDepthResources() noexcept;
 
@@ -178,7 +178,7 @@ class VulkanRenderer {
     vk::DescriptorSetLayout descriptor_set_layout_ = nullptr;
     std::vector<vk::DescriptorSet> descriptor_sets_;
 
-    GraphicsPipelineHandle graphics_pipeline_;
+    GraphicsPipelineHandle graphics_pipeline_ = {};
 
     std::vector<vk::Semaphore> sem_present_done_;
     std::vector<vk::Semaphore> sem_render_done_;

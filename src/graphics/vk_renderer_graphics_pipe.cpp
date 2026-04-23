@@ -44,6 +44,19 @@ vk::PipelineRasterizationStateCreateInfo buildRasterizerInfo() {
 
     return info;
 }
+
+std::vector<vk::PipelineShaderStageCreateInfo>
+buildShaderStageInfo(vk::ShaderModule module) noexcept {
+    assert(module != nullptr);
+
+    vk::PipelineShaderStageCreateInfo vert_stage_info{{},
+        vk::ShaderStageFlagBits::eVertex, module, "vertMain"};
+
+    vk::PipelineShaderStageCreateInfo frag_stage_info{{},
+        vk::ShaderStageFlagBits::eFragment, module, "fragMain"};
+
+    return {vert_stage_info, frag_stage_info};
+}
 }  // namespace
 
 namespace graphics::vk_renderer {
@@ -63,28 +76,13 @@ VulkanRenderer::createShaderModule(const std::vector<char>& code) noexcept {
 vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
     assert(device_ != nullptr);
 
-    vk::PipelineLayout layout;
-    vk::PipelineLayoutCreateInfo layout_info = {};
-    layout_info.setLayoutCount = 1;
-    layout_info.pSetLayouts = &descriptor_set_layout_;
-    layout_info.pushConstantRangeCount = 0;
+    vk::PipelineLayout layout = nullptr;
+    vk::PipelineLayoutCreateInfo layout_info{{}, 1, &descriptor_set_layout_,
+                                             0};
 
     layout = device_.createPipelineLayout(layout_info);
     assert(layout != nullptr);
     return layout;
-}
-
-std::vector<vk::PipelineShaderStageCreateInfo>
-buildShaderStageInfo(vk::ShaderModule module) noexcept {
-    assert(module != nullptr);
-
-    vk::PipelineShaderStageCreateInfo vert_stage_info{{},
-        vk::ShaderStageFlagBits::eVertex, module, "vertMain"};
-
-    vk::PipelineShaderStageCreateInfo frag_stage_info{{},
-        vk::ShaderStageFlagBits::eFragment, module, "fragMain"};
-
-    return {vert_stage_info, frag_stage_info};
 }
 
 void VulkanRenderer::createGraphicsPipeline() noexcept {

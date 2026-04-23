@@ -237,7 +237,7 @@ void VulkanRenderer::createCommandPool() noexcept {
 vk::Format VulkanRenderer::findDesiredFormat(
         const std::vector<vk::Format>& candidates,
         const vk::ImageTiling tiling,
-        const vk::FormatFeatureFlags features) noexcept {
+        const vk::FormatFeatureFlags features) const noexcept {
     for (const vk::Format format : candidates) {
         vk::FormatProperties props = physical_device_.getFormatProperties(format);
         if (tiling == vk::ImageTiling::eLinear
