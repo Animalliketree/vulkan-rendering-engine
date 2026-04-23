@@ -10,8 +10,8 @@ class VulkanDeviceHandle {
     ~VulkanDeviceHandle() noexcept;
 
     inline const vk::Instance& instance() const noexcept { return instance_; }
-    inline const vk::Device& device() const noexcept { return device_; }
-    inline const vk::Queue& queue() const noexcept { return graphics_queue_; }
+    inline const vk::Device device() const noexcept { return device_; }
+    inline const vk::Queue queue() const noexcept { return graphics_queue_; }
     inline uint32_t queueIndex() const noexcept { return graphics_qf_idx_; }
     inline const vk::PhysicalDevice& physicalDevice() const noexcept {
         return physical_device_;
