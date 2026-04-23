@@ -3,6 +3,7 @@
 #ifndef SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 #define SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 
+#include "vulkan/vulkan.hpp"
 #include <SDL3/SDL_video.h>
 #include <cstdint>
 #include <chrono>
@@ -47,6 +48,13 @@ struct GraphicsPipelineHandle {
     vk::Pipeline pipeline = nullptr;
 };
 
+struct DepthImage {
+    vk::Image image = nullptr;
+    vk::DeviceMemory memory = nullptr;
+    vk::ImageView view = nullptr;
+    vk::Format format;
+};
+
 class VulkanRenderer {
  public:
     explicit VulkanRenderer(SDL_Window* window) noexcept;
@@ -78,6 +86,11 @@ class VulkanRenderer {
     void createSwapchain(vk::SwapchainKHR old_swapchain) noexcept;
 
     void recreateSwapchain();
+
+    vk::ImageView createImageView(
+        const vk::Image& img,
+        const vk::Format format,
+        const vk::ImageAspectFlags flags) noexcept;
 
     void createImageViews() noexcept;
 
@@ -113,6 +126,13 @@ class VulkanRenderer {
 
     void createCommandPool() noexcept;
 
+    vk::Format findDesiredFormat(
+        const std::vector<vk::Format>& candidates,
+        const vk::ImageTiling tiling,
+        const vk::FormatFeatureFlags features) noexcept;
+
+    void createDepthResources() noexcept;
+
     void createCommandBuffers() noexcept;
 
     void createDescriptorPool() noexcept;
@@ -121,13 +141,14 @@ class VulkanRenderer {
 
     // Drawing Methods
     void transitionImageLayout(
-        const uint32_t image_index,
+        const vk::Image& img,
         const vk::ImageLayout old_layout,
         const vk::ImageLayout new_layout,
         const vk::AccessFlags2 src_access_mask,
         const vk::AccessFlags2 dst_access_mask,
         const vk::PipelineStageFlags2 src_stage_mask,
-        const vk::PipelineStageFlags2 dst_stage_mask);
+        const vk::PipelineStageFlags2 dst_stage_mask,
+        const vk::ImageAspectFlags aspect);
 
     void recordCommandBuffer(uint32_t image_index);
 
@@ -165,6 +186,8 @@ class VulkanRenderer {
 
     uint32_t frame_index_ = 0;
     bool framebuffer_resized_ = false;
+
+    DepthImage depth_image_;
 
     Time start_time_ = std::chrono::high_resolution_clock::now();
 };

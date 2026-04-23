@@ -1,10 +1,12 @@
 /* Copyright 2026 Alix Boivin */
 
 #include <algorithm>
+#include <cassert>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
 #include "../graphics/vulkan_renderer.hpp"
+#include "vulkan/vulkan.hpp"
 
 namespace {
 constexpr uint32_t kWindowWidth = 800;
@@ -53,28 +55,27 @@ vk::PresentModeKHR VulkanRenderer::chooseSwapPresentMode() {
     return vk::PresentModeKHR::eFifo;
 }
 
+vk::ImageView VulkanRenderer::createImageView(const vk::Image& img,
+                                              const vk::Format fmt,
+                                  const vk::ImageAspectFlags aspect) noexcept {
+    assert(device_ != nullptr);
+
+    vk::ImageViewCreateInfo info{{}, img, vk::ImageViewType::e2D, fmt,
+                                 {vk::ComponentSwizzle::eIdentity},
+                                 {aspect, 0, 1, 0, 1}};
+
+    return device_.createImageView(info);
+}
+
 void VulkanRenderer::createImageViews() noexcept {
     assert(device_ != nullptr && swapchain_.image_views.empty());
 
-    vk::ImageViewCreateInfo view_info = {};
-    view_info.pNext = nullptr;
-    view_info.viewType = vk::ImageViewType::e2D;
-    view_info.format = swapchain_.format.format;
-    view_info.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1};
-    view_info.components = {
-        vk::ComponentSwizzle::eIdentity,
-        vk::ComponentSwizzle::eIdentity,
-        vk::ComponentSwizzle::eIdentity,
-        vk::ComponentSwizzle::eIdentity
-    };
-
-    swapchain_.image_views.resize(swapchain_.images.size());
-    for (uint32_t i = 0; i < swapchain_.images.size(); i++) {
-        view_info.image = swapchain_.images[i];
-
-        swapchain_.image_views[i] = device_.createImageView(view_info);
-        assert(swapchain_.image_views[i] != nullptr);
+    for (vk::Image img : swapchain_.images) {
+        swapchain_.image_views.push_back(createImageView(img,
+                swapchain_.format.format, vk::ImageAspectFlagBits::eColor));
     }
+
+    assert(swapchain_.image_views.size() == swapchain_.images.size());
 }
 
 void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) noexcept {

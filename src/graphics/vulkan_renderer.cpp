@@ -1,6 +1,7 @@
 /* Copyright 2026 Alix Boivin */
 
 #include "../../src/graphics/vulkan_renderer.hpp"
+#include "vulkan/vulkan.hpp"
 
 #include <fcntl.h>
 #include <quill/Logger.h>
@@ -17,6 +18,9 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/vector_float3.hpp>
@@ -31,15 +35,15 @@ struct UniformBufferObject {
 };
 
 const std::vector<graphics::vk_renderer::Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.25f}, {1.0f, 0.0f, 0.0f}},
-    {{-0.5f, 0.5f,  0.25f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f,  -0.5f, 0.25f}, {0.0f, 0.0f, 1.0f}},
-    {{0.5f,  0.5f,  0.25f}, {1.0f, 1.0f, 1.0f}},
-
     {{-0.5f, -0.5f, -0.25f}, {1.0f, 0.0f, 0.0f}},
-    {{-0.5f, 0.5f,  -0.25f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f,  -0.5f, -0.25f}, {0.0f, 0.0f, 1.0f}},
-    {{0.5f,  0.5f,  -0.25f}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f,  0.5f, -0.25f}, {0.0f, 1.0f, 0.0f}},
+    {{ 0.5f, -0.5f, -0.25f}, {0.0f, 0.0f, 1.0f}},
+    {{ 0.5f,  0.5f, -0.25f}, {1.0f, 1.0f, 1.0f}},
+
+    {{-0.5f, -0.5f,  0.25f}, {1.0f, 0.0f, 0.0f}},
+    {{-0.5f,  0.5f,  0.25f}, {0.0f, 1.0f, 0.0f}},
+    {{ 0.5f, -0.5f,  0.25f}, {0.0f, 0.0f, 1.0f}},
+    {{ 0.5f,  0.5f,  0.25f}, {1.0f, 1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
@@ -71,6 +75,7 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
     createSwapchain(nullptr);
     createImageViews();
     createCommandPool();
+    createDepthResources();
     createCommandBuffers();
     loadDataToDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer,
                      vertex_buffer_);
@@ -86,6 +91,10 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
 
 VulkanRenderer::~VulkanRenderer() noexcept {
     device_.waitIdle();
+
+    device_.destroyImageView(depth_image_.view);
+    device_.destroyImage(depth_image_.image);
+    device_.freeMemory(depth_image_.memory);
 
     for (VkFence fence : draw_fences_) device_.destroyFence(fence);
     for (VkSemaphore semaphore : render_finished_semaphores_)
@@ -232,6 +241,53 @@ void VulkanRenderer::createCommandPool() noexcept {
     assert(command_pool_ != nullptr);
 }
 
+vk::Format VulkanRenderer::findDesiredFormat(
+        const std::vector<vk::Format>& candidates,
+        const vk::ImageTiling tiling,
+        const vk::FormatFeatureFlags features) noexcept {
+    for (const vk::Format format : candidates) {
+        vk::FormatProperties props = physical_device_.getFormatProperties(format);
+        if (tiling == vk::ImageTiling::eLinear
+                && (props.linearTilingFeatures & features) == features) {
+            return format;
+        } else if (tiling == vk::ImageTiling::eOptimal
+                && (props.optimalTilingFeatures & features) == features) {
+            return format;
+        }
+    }
+
+    abort();  // Failed to find a valid format from the list
+}
+
+void VulkanRenderer::createDepthResources() noexcept {
+    const std::vector<vk::Format> candidates = {
+        vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
+        vk::Format::eD24UnormS8Uint};
+    depth_image_.format = findDesiredFormat(candidates,
+        vk::ImageTiling::eOptimal,
+        vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+
+    vk::ImageCreateInfo img_info{{}, vk::ImageType::e2D, depth_image_.format,
+        {swapchain_.extent.width, swapchain_.extent.height, 1},
+        1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
+        vk::ImageUsageFlagBits::eDepthStencilAttachment,
+        vk::SharingMode::eExclusive, 1, &graphics_qf_idx_,
+        vk::ImageLayout::eUndefined};
+    depth_image_.image = device_.createImage(img_info);
+
+    vk::MemoryRequirements mem_req =
+        device_.getImageMemoryRequirements(depth_image_.image);
+    vk::MemoryAllocateInfo alloc_info{mem_req.size,
+        findMemoryType(mem_req.memoryTypeBits,
+                       vk::MemoryPropertyFlagBits::eHostVisible
+                       | vk::MemoryPropertyFlagBits::eHostCoherent)};
+    depth_image_.memory = device_.allocateMemory(alloc_info);
+    device_.bindImageMemory(depth_image_.image, depth_image_.memory, 0);
+    depth_image_.view = createImageView(depth_image_.image,
+                                        depth_image_.format,
+                                        vk::ImageAspectFlagBits::eDepth);
+}
+
 void VulkanRenderer::createCommandBuffers() noexcept {
     assert(device_ != nullptr && command_buffers_.empty());
 
@@ -244,72 +300,75 @@ void VulkanRenderer::createCommandBuffers() noexcept {
     assert(command_buffers_.size() == kMaxFramesInFlight);
 }
 
-void VulkanRenderer::transitionImageLayout(const uint32_t image_index,
+void VulkanRenderer::transitionImageLayout(const vk::Image& img,
         const vk::ImageLayout old_layout, const vk::ImageLayout new_layout,
         const vk::AccessFlags2 src_access_mask,
         const vk::AccessFlags2 dst_access_mask,
         const vk::PipelineStageFlags2 src_stage_mask,
-        const vk::PipelineStageFlags2 dst_stage_mask) {
-    vk::ImageMemoryBarrier2 barrier = {};
-    barrier.srcStageMask = src_stage_mask;
-    barrier.srcAccessMask = src_access_mask;
-    barrier.dstStageMask = dst_stage_mask;
-    barrier.dstAccessMask = dst_access_mask;
-    barrier.oldLayout = old_layout;
-    barrier.newLayout = new_layout;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = swapchain_.images[image_index];
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+        const vk::PipelineStageFlags2 dst_stage_mask,
+        const vk::ImageAspectFlags aspect) {
+    vk::ImageMemoryBarrier2 barrier{
+        src_stage_mask, src_access_mask, dst_stage_mask, dst_access_mask,
+        old_layout, new_layout, VK_QUEUE_FAMILY_IGNORED,
+        VK_QUEUE_FAMILY_IGNORED, img, {aspect, 0, 1, 0, 1}, nullptr};
 
-    vk::DependencyInfo dependency_info = {};
-    dependency_info.imageMemoryBarrierCount = 1;
-    dependency_info.pImageMemoryBarriers = &barrier;
-    command_buffers_[frame_index_].pipelineBarrier2(&dependency_info);
+    vk::DependencyInfo dep_info{{}, 0, {}, 0, {}, 1, &barrier, nullptr};
+    command_buffers_[frame_index_].pipelineBarrier2(&dep_info);
 }
 
-void VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
-    vk::CommandBufferBeginInfo begin_info = {};
-    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
+    vk::CommandBuffer& cmd_buf = command_buffers_[frame_index_];
 
-    vk::Result result = command_buffers_[frame_index_].begin(&begin_info);
-    assert(result == vk::Result::eSuccess);
+    cmd_buf.begin({vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 
-    transitionImageLayout(image_index, vk::ImageLayout::eUndefined,
+    transitionImageLayout(swapchain_.images[img_i],
+        vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal, {},
         vk::AccessFlagBits2::eColorAttachmentWrite,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::ImageAspectFlagBits::eColor);
 
-    vk::ClearValue clear_value;
-    clear_value.color = {0.0f, 0.0f, 0.0f, 1.0f};
-    vk::RenderingAttachmentInfo attachment_info = {};
-    attachment_info.imageView = swapchain_.image_views[image_index],
-    attachment_info.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-    attachment_info.loadOp = vk::AttachmentLoadOp::eClear,
-    attachment_info.storeOp = vk::AttachmentStoreOp::eStore,
-    attachment_info.clearValue = clear_value;
+    transitionImageLayout(depth_image_.image, vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthAttachmentOptimal,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests
+        | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests
+        | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::ImageAspectFlagBits::eDepth);
 
-    vk::RenderingInfo rendering_info = {};
-    rendering_info.renderArea = vk::Rect2D{{0, 0}, swapchain_.extent};
-    rendering_info.layerCount = 1;
-    rendering_info.colorAttachmentCount = 1;
-    rendering_info.pColorAttachments = &attachment_info;
-    command_buffers_[frame_index_].beginRendering(&rendering_info);
+    vk::ClearValue clear_value = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+    vk::ClearValue depth_value = vk::ClearDepthStencilValue{1.0f, 0};
 
-    command_buffers_[frame_index_].bindPipeline(
-        vk::PipelineBindPoint::eGraphics,
-        graphics_pipeline_.pipeline);
-    command_buffers_[frame_index_].bindVertexBuffers(0, 1,
-                                                     &vertex_buffer_.buffer,
-                                                     &vertex_buffer_.offset);
-    command_buffers_[frame_index_].bindIndexBuffer(index_buffer_.buffer,
-                                                   index_buffer_.offset,
-                                                   vk::IndexType::eUint16);
+    vk::RenderingAttachmentInfo color_attach_info{
+        swapchain_.image_views[img_i],
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ResolveModeFlagBits::eNone, {}, vk::ImageLayout::eUndefined,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+        clear_value, nullptr};
+
+    vk::RenderingAttachmentInfo depth_attach_info{depth_image_.view,
+        vk::ImageLayout::eDepthAttachmentOptimal,
+        vk::ResolveModeFlagBits::eNone, {}, vk::ImageLayout::eUndefined,
+        vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
+        depth_value, nullptr};
+
+    vk::RenderingInfo render_info = {};
+    render_info.renderArea = vk::Rect2D{{0, 0}, swapchain_.extent};
+    render_info.layerCount = 1;
+    render_info.colorAttachmentCount = 1;
+    render_info.pColorAttachments = &color_attach_info;
+    render_info.pDepthAttachment = &depth_attach_info;
+    cmd_buf.beginRendering(&render_info);
+
+    cmd_buf.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                         graphics_pipeline_.pipeline);
+    cmd_buf.bindVertexBuffers(0, 1, &vertex_buffer_.buffer,
+                              &vertex_buffer_.offset);
+    cmd_buf.bindIndexBuffer(index_buffer_.buffer, index_buffer_.offset,
+                            vk::IndexType::eUint16);
 
     vk::Viewport viewport = {0.0f, 0.0f,
                              static_cast<float>(swapchain_.extent.width),
@@ -318,24 +377,23 @@ void VulkanRenderer::recordCommandBuffer(uint32_t image_index) {
 
     vk::Rect2D scissor = {vk::Offset2D{0, 0}, swapchain_.extent};
 
-    command_buffers_[frame_index_].setViewport(0, 1, &viewport);
-    command_buffers_[frame_index_].setScissor(0, 1, &scissor);
-    command_buffers_[frame_index_].bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics,
-        graphics_pipeline_.layout, 0, descriptor_sets_[frame_index_],
-        nullptr);
-    command_buffers_[frame_index_].drawIndexed(
-        static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-    command_buffers_[frame_index_].endRendering();
+    cmd_buf.setViewport(0, 1, &viewport);
+    cmd_buf.setScissor(0, 1, &scissor);
+    cmd_buf.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                               graphics_pipeline_.layout, 0,
+                               descriptor_sets_[frame_index_], nullptr);
+    cmd_buf.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    cmd_buf.endRendering();
 
-    transitionImageLayout(image_index,
+    transitionImageLayout(swapchain_.images[img_i],
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::ePresentSrcKHR,
         vk::AccessFlagBits2::eColorAttachmentWrite, {},
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits2::eBottomOfPipe);
+        vk::PipelineStageFlagBits2::eBottomOfPipe,
+        vk::ImageAspectFlagBits::eColor);
 
-    vkEndCommandBuffer(command_buffers_[frame_index_]);
+    vkEndCommandBuffer(cmd_buf);
 }
 
 void VulkanRenderer::createSyncObjects() noexcept {
@@ -404,11 +462,10 @@ bool VulkanRenderer::drawFrame() {
                                               VK_TRUE, UINT64_MAX);
     assert(result == vk::Result::eSuccess);
 
-    uint32_t image_index;
+    uint32_t img_i;
     result = device_.acquireNextImageKHR(
         swapchain_.swapchain, UINT64_MAX,
-        present_complete_semaphores_[frame_index_],
-        nullptr, &image_index);
+        present_complete_semaphores_[frame_index_], nullptr, &img_i);
     switch (result) {
         case vk::Result::eErrorOutOfDateKHR:
             recreateSwapchain();
@@ -426,30 +483,26 @@ bool VulkanRenderer::drawFrame() {
     assert(result == vk::Result::eSuccess);
 
     command_buffers_[frame_index_].reset();
-    recordCommandBuffer(image_index);
+    recordCommandBuffer(img_i);
 
-    updateUniformBuffer(image_index);
+    updateUniformBuffer(img_i);
 
-    vk::PipelineStageFlags wait_dst_stage_mask =
+    vk::PipelineStageFlags wait_dst_stage =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    vk::SubmitInfo submitInfo = {};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &present_complete_semaphores_[frame_index_];
-    submitInfo.pWaitDstStageMask = &wait_dst_stage_mask;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &command_buffers_[frame_index_];
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &render_finished_semaphores_[image_index];
+    vk::SubmitInfo submitInfo{1, &present_complete_semaphores_[frame_index_],
+                              &wait_dst_stage, 1,
+                              &command_buffers_[frame_index_], 1,
+                              &render_finished_semaphores_[img_i]};
 
     result = graphics_queue_.submit(1, &submitInfo,
                                     draw_fences_[frame_index_]);
 
     vk::PresentInfoKHR present_info = {};
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &render_finished_semaphores_[image_index];
+    present_info.pWaitSemaphores = &render_finished_semaphores_[img_i];
     present_info.swapchainCount = 1;
     present_info.pSwapchains = &swapchain_.swapchain;
-    present_info.pImageIndices = &image_index;
+    present_info.pImageIndices = &img_i;
 
     result = graphics_queue_.presentKHR(&present_info);
     switch (result) {

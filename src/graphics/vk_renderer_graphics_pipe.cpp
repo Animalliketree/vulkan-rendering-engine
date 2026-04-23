@@ -146,11 +146,15 @@ void VulkanRenderer::createGraphicsPipeline() noexcept {
     color_blend_info.attachmentCount = 1;
     color_blend_info.pAttachments = &color_blend_attach;
 
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_info{{},
+        vk::True, vk::True, vk::CompareOp::eLess, vk::False, vk::False};
+
     graphics_pipeline_.layout = createGraphicsPipelineLayout();
 
     vk::PipelineRenderingCreateInfo rendering_info = {};
     rendering_info.colorAttachmentCount = 1;
     rendering_info.pColorAttachmentFormats = &swapchain_.format.format;
+    rendering_info.depthAttachmentFormat = depth_image_.format;
 
     vk::GraphicsPipelineCreateInfo pipeline_info = {};
     pipeline_info.pNext = &rendering_info;
@@ -162,6 +166,7 @@ void VulkanRenderer::createGraphicsPipeline() noexcept {
     pipeline_info.pRasterizationState = &rasterizer_info;
     pipeline_info.pMultisampleState = &multisample_info;
     pipeline_info.pColorBlendState = &color_blend_info;
+    pipeline_info.pDepthStencilState = &depth_stencil_info;
     pipeline_info.pDynamicState = &dyn_state_info;
     pipeline_info.layout = graphics_pipeline_.layout;
     pipeline_info.renderPass = nullptr;
