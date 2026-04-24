@@ -3,6 +3,8 @@
 #include "../../src/graphics/vulkan_renderer.hpp"
 #include "vulkan/vulkan.hpp"
 
+#include <array>
+#include <cstddef>
 #include <fcntl.h>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
@@ -33,19 +35,19 @@ struct UniformBufferObject {
     alignas(16) glm::mat4 proj;
 };
 
-const std::vector<graphics::vk_renderer::Vertex> vertices = {
-    {{-0.5f, -0.5f, -0.25f}, {1.0f, 0.0f, 0.0f}},
-    {{-0.5f,  0.5f, -0.25f}, {0.0f, 1.0f, 0.0f}},
-    {{ 0.5f, -0.5f, -0.25f}, {0.0f, 0.0f, 1.0f}},
-    {{ 0.5f,  0.5f, -0.25f}, {1.0f, 1.0f, 1.0f}},
+const std::array<graphics::vk_renderer::Vertex, 8> vertices = {
+    graphics::vk_renderer::Vertex{glm::vec3(-0.5f, -0.5f, -0.25f), glm::vec3(1.0f, 0.0f, 0.0f)},
+    graphics::vk_renderer::Vertex{glm::vec3(-0.5f,  0.5f, -0.25f), glm::vec3(0.0f, 1.0f, 0.0f)},
+    graphics::vk_renderer::Vertex{glm::vec3( 0.5f, -0.5f, -0.25f), glm::vec3(0.0f, 0.0f, 1.0f)},
+    graphics::vk_renderer::Vertex{glm::vec3( 0.5f,  0.5f, -0.25f), glm::vec3(1.0f, 1.0f, 1.0f)},
 
-    {{-0.5f, -0.5f,  0.25f}, {1.0f, 0.0f, 0.0f}},
-    {{-0.5f,  0.5f,  0.25f}, {0.0f, 1.0f, 0.0f}},
-    {{ 0.5f, -0.5f,  0.25f}, {0.0f, 0.0f, 1.0f}},
-    {{ 0.5f,  0.5f,  0.25f}, {1.0f, 1.0f, 1.0f}},
+    {glm::vec3{-0.5f, -0.5f,  0.25f}, glm::vec3{1.0f, 0.0f, 0.0f}},
+    {glm::vec3{-0.5f,  0.5f,  0.25f}, glm::vec3{0.0f, 1.0f, 0.0f}},
+    {glm::vec3{ 0.5f, -0.5f,  0.25f}, glm::vec3{0.0f, 0.0f, 1.0f}},
+    {glm::vec3{ 0.5f,  0.5f,  0.25f}, glm::vec3{1.0f, 1.0f, 1.0f}},
 };
 
-const std::vector<uint16_t> indices = {
+const std::array<uint16_t, 12> indices = {
     0, 2, 3, 3, 1, 0,
     4, 6, 7, 7, 5, 4,
 };
@@ -70,9 +72,9 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
     createCommandPool();
     createDepthResources();
     createCommandBuffers();
-    loadDataToDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer,
+    loadDataOntoDevice(vertices, vk::BufferUsageFlagBits::eVertexBuffer,
                      vertex_buffer_);
-    loadDataToDevice(indices, vk::BufferUsageFlagBits::eIndexBuffer,
+    loadDataOntoDevice(indices, vk::BufferUsageFlagBits::eIndexBuffer,
                      index_buffer_);
     createUniformBuffers();
     createDescriptorPool();
@@ -166,8 +168,8 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
     device_.queueWaitIdle();
 }
 
-template<typename T>
-void VulkanRenderer::loadDataToDevice(const std::vector<T> data,
+template<typename T, size_t N>
+void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
                                       const vk::BufferUsageFlags usage,
                                       BufferHandle& dst) noexcept {
     vk::DeviceSize buffer_size = sizeof(data[0]) * data.size();

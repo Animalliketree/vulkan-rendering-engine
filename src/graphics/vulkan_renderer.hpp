@@ -105,9 +105,9 @@ class VulkanRenderer {
         const vk::Buffer& dst,
         const vk::DeviceSize buffer_size) noexcept;
 
-    template<typename T>
-    void loadDataToDevice(
-        const std::vector<T> data,
+    template<typename T, size_t N>
+    void loadDataOntoDevice(
+        const std::array<T, N> data,
         const vk::BufferUsageFlags usage,
         BufferHandle& dst) noexcept;
 
