@@ -66,7 +66,7 @@ VulkanRenderer::createShaderModule(const std::vector<char>& code) noexcept {
     module_info.codeSize = code.size() * sizeof(char);
     module_info.pCode = reinterpret_cast<const uint32_t*>(code.data());
 
-    graphics_pipeline_.shader_module = device_.device().createShaderModule(module_info);
+    graphics_pipeline_.shader_module = device_.createShaderModule(module_info);
 
     assert(graphics_pipeline_.shader_module != nullptr);
 }
@@ -76,7 +76,7 @@ vk::PipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
     vk::PipelineLayoutCreateInfo layout_info{{}, 1, &descriptor_set_layout_,
                                              0};
 
-    layout = device_.device().createPipelineLayout(layout_info);
+    layout = device_.createPipelineLayout(layout_info);
     assert(layout != nullptr);
     return layout;
 }
@@ -152,7 +152,7 @@ void VulkanRenderer::createGraphicsPipeline() noexcept {
     pipeline_info.layout = graphics_pipeline_.layout;
     pipeline_info.renderPass = nullptr;
 
-    graphics_pipeline_.pipeline = device_.device().createGraphicsPipelines(
+    graphics_pipeline_.pipeline = device_.createGraphicsPipelines(
         nullptr, pipeline_info).value[0];
     assert(graphics_pipeline_.pipeline != nullptr);
 }

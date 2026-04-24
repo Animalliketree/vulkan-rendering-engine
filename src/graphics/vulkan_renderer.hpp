@@ -63,7 +63,7 @@ struct Camera {
     glm::vec3 up = glm::vec3(0.0f);
 };
 
-class VulkanRenderer {
+class VulkanRenderer : private vulkan::device::VulkanDeviceHandle {
  public:
     explicit VulkanRenderer(SDL_Window* window) noexcept;
     ~VulkanRenderer() noexcept;
@@ -73,7 +73,6 @@ class VulkanRenderer {
     bool drawFrame();
 
  private:
-    const vulkan::device::VulkanDeviceHandle device_;
     const uint32_t kMaxFramesInFlight = 2;
 
     using Time = std::chrono::time_point<

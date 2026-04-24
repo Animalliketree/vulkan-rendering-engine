@@ -54,7 +54,7 @@ vk::ImageView VulkanRenderer::createImageView(const vk::Image& img,
                                  {vk::ComponentSwizzle::eIdentity},
                                  {aspect, 0, 1, 0, 1}};
 
-    return device_.device().createImageView(info);
+    return device_.createImageView(info);
 }
 
 void VulkanRenderer::createImageViews() noexcept {
@@ -72,13 +72,13 @@ void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) noexcept {
     assert(surface_ != nullptr);
 
     vk::SurfaceCapabilitiesKHR capabilities =
-        device_.physicalDevice().getSurfaceCapabilitiesKHR(surface_);
+        physical_device_.getSurfaceCapabilitiesKHR(surface_);
     assert(capabilities != nullptr);
 
     swapchain_.extent = chooseSwapExtent(capabilities);
 
     swapchain_.format = chooseFromList(
-        device_.physicalDevice().getSurfaceFormatsKHR(surface_));
+        physical_device_.getSurfaceFormatsKHR(surface_));
 
     uint32_t min_images = capabilities.maxImageCount > 0
         ? std::min(capabilities.minImageCount + 1, capabilities.maxImageCount)
@@ -89,23 +89,22 @@ void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) noexcept {
         swapchain_.extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
         vk::SharingMode::eExclusive, 0, {}, capabilities.currentTransform,
         vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        chooseFromList(device_.physicalDevice()
-            .getSurfacePresentModesKHR(surface_)),
+        chooseFromList(physical_device_.getSurfacePresentModesKHR(surface_)),
         vk::True, old_swapchain};
 
-    swapchain_.swapchain = device_.device().createSwapchainKHR(swapchain_info);
+    swapchain_.swapchain = device_.createSwapchainKHR(swapchain_info);
     assert(swapchain_.swapchain != nullptr);
 
-    device_.device().destroySwapchainKHR(old_swapchain);
+    device_.destroySwapchainKHR(old_swapchain);
 
-    swapchain_.images = device_.device().getSwapchainImagesKHR(swapchain_.swapchain);
+    swapchain_.images = device_.getSwapchainImagesKHR(swapchain_.swapchain);
 }
 
 void VulkanRenderer::recreateSwapchain() {
-    device_.device().waitIdle();
+    device_.waitIdle();
 
     for (vk::ImageView view : swapchain_.image_views)
-        device_.device().destroyImageView(view);
+        device_.destroyImageView(view);
     swapchain_.image_views.clear();
 
     createSwapchain(swapchain_.swapchain);

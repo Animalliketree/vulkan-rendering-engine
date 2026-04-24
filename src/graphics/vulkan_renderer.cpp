@@ -59,7 +59,7 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
 
     quill::Logger* log = quill::simple_logger();
 
-    bool success = SDL_Vulkan_CreateSurface(window, device_.instance(),
+    bool success = SDL_Vulkan_CreateSurface(window, instance_,
                                             nullptr, &surface_);
     if (!success) {
         quill::info(log, "Failed to create Vulkan surface: {}",
@@ -87,42 +87,42 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
 }
 
 VulkanRenderer::~VulkanRenderer() noexcept {
-    device_.device().waitIdle();
+    device_.waitIdle();
 
-    device_.device().destroyImageView(depth_image_.view);
-    device_.device().destroyImage(depth_image_.image);
-    device_.device().freeMemory(depth_image_.memory);
+    device_.destroyImageView(depth_image_.view);
+    device_.destroyImage(depth_image_.image);
+    device_.freeMemory(depth_image_.memory);
 
-    for (VkFence fence : draw_fences_) device_.device().destroyFence(fence);
+    for (VkFence fence : draw_fences_) device_.destroyFence(fence);
     for (VkSemaphore semaphore : sem_render_done_)
-        device_.device().destroySemaphore(semaphore);
+        device_.destroySemaphore(semaphore);
     for (VkSemaphore semaphore : sem_present_done_)
-        device_.device().destroySemaphore(semaphore);
+        device_.destroySemaphore(semaphore);
 
-    device_.device().destroyPipeline(graphics_pipeline_.pipeline);
-    device_.device().destroyPipelineLayout(graphics_pipeline_.layout);
-    device_.device().destroyShaderModule(graphics_pipeline_.shader_module);
+    device_.destroyPipeline(graphics_pipeline_.pipeline);
+    device_.destroyPipelineLayout(graphics_pipeline_.layout);
+    device_.destroyShaderModule(graphics_pipeline_.shader_module);
 
-    device_.device().destroyDescriptorSetLayout(descriptor_set_layout_);
-    device_.device().destroyDescriptorPool(descriptor_pool_);
+    device_.destroyDescriptorSetLayout(descriptor_set_layout_);
+    device_.destroyDescriptorPool(descriptor_pool_);
 
     for (BufferHandle buf : uniform_buffers_) {
-        device_.device().unmapMemory(buf.memory);
-        device_.device().destroyBuffer(buf.buffer);
-        device_.device().freeMemory(buf.memory);
+        device_.unmapMemory(buf.memory);
+        device_.destroyBuffer(buf.buffer);
+        device_.freeMemory(buf.memory);
     }
 
-    device_.device().destroyBuffer(index_buffer_.buffer);
-    device_.device().freeMemory(index_buffer_.memory);
-    device_.device().destroyBuffer(vertex_buffer_.buffer);
-    device_.device().freeMemory(vertex_buffer_.memory);
+    device_.destroyBuffer(index_buffer_.buffer);
+    device_.freeMemory(index_buffer_.memory);
+    device_.destroyBuffer(vertex_buffer_.buffer);
+    device_.freeMemory(vertex_buffer_.memory);
 
-    device_.device().destroyCommandPool(command_pool_);
+    device_.destroyCommandPool(command_pool_);
 
     for (VkImageView view : swapchain_.image_views)
-        device_.device().destroyImageView(view);
-    device_.device().destroySwapchainKHR(swapchain_.swapchain);
-    SDL_Vulkan_DestroySurface(device_.instance(), surface_, nullptr);
+        device_.destroyImageView(view);
+    device_.destroySwapchainKHR(swapchain_.swapchain);
+    SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
 }
 
 BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
@@ -131,16 +131,16 @@ BufferHandle VulkanRenderer::createBuffer(const vk::DeviceSize size,
     BufferHandle buf;
     vk::BufferCreateInfo buf_info{{}, size, usage,
                                   vk::SharingMode::eExclusive};
-    buf.buffer = device_.device().createBuffer(buf_info);
+    buf.buffer = device_.createBuffer(buf_info);
 
     vk::MemoryRequirements mem_req =
-        device_.device().getBufferMemoryRequirements(buf.buffer);
+        device_.getBufferMemoryRequirements(buf.buffer);
 
     vk::MemoryAllocateInfo alloc_info{mem_req.size,
-        device_.findMemoryType(mem_req.memoryTypeBits, props)};
-    buf.memory = device_.device().allocateMemory(alloc_info);
+        findMemoryType(mem_req.memoryTypeBits, props)};
+    buf.memory = device_.allocateMemory(alloc_info);
 
-    device_.device().bindBufferMemory(buf.buffer, buf.memory, buf.offset);
+    device_.bindBufferMemory(buf.buffer, buf.memory, buf.offset);
     return buf;
 }
 
@@ -151,8 +151,7 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
     vk::CommandBufferAllocateInfo alloc_info{command_pool_,
         vk::CommandBufferLevel::ePrimary, 1};
 
-    vk::CommandBuffer copy_buf = device_.device()
-        .allocateCommandBuffers(alloc_info)[0];
+    vk::CommandBuffer copy_buf = device_.allocateCommandBuffers(alloc_info)[0];
 
     vk::CommandBufferBeginInfo begin_info;
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
@@ -164,8 +163,8 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
     vk::SubmitInfo submit_info;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &copy_buf;
-    device_.submit(submit_info);
-    device_.queueWaitIdle();
+    graphics_queue_.submit(submit_info);
+    graphics_queue_.waitIdle();
 }
 
 template<typename T, size_t N>
@@ -182,22 +181,22 @@ void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
         vk::MemoryPropertyFlagBits::eDeviceLocal,
         usage | vk::BufferUsageFlagBits::eTransferDst);
 
-    void* mem = device_.device().mapMemory(staging_buf.memory,
+    void* mem = device_.mapMemory(staging_buf.memory,
         staging_buf.offset, buffer_size);
     SDL_memcpy(mem, data.data(), buffer_size);
-    device_.device().unmapMemory(staging_buf.memory);
+    device_.unmapMemory(staging_buf.memory);
 
     copyBuffer(staging_buf.buffer, buf.buffer, buffer_size);
-    device_.device().destroyBuffer(staging_buf.buffer);
-    device_.device().freeMemory(staging_buf.memory);
+    device_.destroyBuffer(staging_buf.buffer);
+    device_.freeMemory(staging_buf.memory);
 }
 
 void VulkanRenderer::createUniformBuffers() noexcept {
     if (!uniform_buffers_.empty()) {
         for (BufferHandle buf : uniform_buffers_) {
-            device_.device().destroyBuffer(buf.buffer);
-            device_.device().unmapMemory(buf.memory);
-            device_.device().freeMemory(buf.memory);
+            device_.destroyBuffer(buf.buffer);
+            device_.unmapMemory(buf.memory);
+            device_.freeMemory(buf.memory);
         }
         uniform_buffers_.clear();
         uniform_buffer_maps_.clear();
@@ -211,7 +210,7 @@ void VulkanRenderer::createUniformBuffers() noexcept {
             vk::BufferUsageFlagBits::eUniformBuffer);
         uniform_buffers_.emplace_back(std::move(buf));
         uniform_buffer_maps_.emplace_back(
-            device_.device().mapMemory(uniform_buffers_[i].memory, 0,
+            device_.mapMemory(uniform_buffers_[i].memory, 0,
                                        buf_size));
     }
 }
@@ -219,43 +218,43 @@ void VulkanRenderer::createUniformBuffers() noexcept {
 void VulkanRenderer::createCommandPool() noexcept {
     vk::CommandPoolCreateInfo pool_info = {};
     pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-    pool_info.queueFamilyIndex = device_.queueIndex();
+    pool_info.queueFamilyIndex = graphics_qf_idx_;
 
-    command_pool_ = device_.device().createCommandPool(pool_info);
+    command_pool_ = device_.createCommandPool(pool_info);
     assert(command_pool_ != nullptr);
 }
 
 void VulkanRenderer::createDepthResources() noexcept {
     if (depth_image_.image != nullptr) {
-        device_.device().destroyImageView(depth_image_.view);
-        device_.device().freeMemory(depth_image_.memory);
-        device_.device().destroyImage(depth_image_.image);
+        device_.destroyImageView(depth_image_.view);
+        device_.freeMemory(depth_image_.memory);
+        device_.destroyImage(depth_image_.image);
     }
 
     const std::vector<vk::Format> candidates = {
         vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint,
         vk::Format::eD24UnormS8Uint};
-    depth_image_.format = device_.findDesiredFormat(candidates,
+    depth_image_.format = findDesiredFormat(candidates,
         vk::ImageTiling::eOptimal,
         vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 
-    uint32_t queue_i = device_.queueIndex();
+    uint32_t queue_i = graphics_qf_idx_;
     vk::ImageCreateInfo img_info{{}, vk::ImageType::e2D, depth_image_.format,
         {swapchain_.extent.width, swapchain_.extent.height, 1},
         1, 1, vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal,
         vk::ImageUsageFlagBits::eDepthStencilAttachment,
         vk::SharingMode::eExclusive, 1, &queue_i,
         vk::ImageLayout::eUndefined};
-    depth_image_.image = device_.device().createImage(img_info);
+    depth_image_.image = device_.createImage(img_info);
 
     vk::MemoryRequirements mem_req =
-        device_.device().getImageMemoryRequirements(depth_image_.image);
+        device_.getImageMemoryRequirements(depth_image_.image);
     vk::MemoryAllocateInfo alloc_info{mem_req.size,
-        device_.findMemoryType(mem_req.memoryTypeBits,
+        findMemoryType(mem_req.memoryTypeBits,
                        vk::MemoryPropertyFlagBits::eHostVisible
                        | vk::MemoryPropertyFlagBits::eHostCoherent)};
-    depth_image_.memory = device_.device().allocateMemory(alloc_info);
-    device_.device().bindImageMemory(depth_image_.image, depth_image_.memory,
+    depth_image_.memory = device_.allocateMemory(alloc_info);
+    device_.bindImageMemory(depth_image_.image, depth_image_.memory,
                                      0);
     depth_image_.view = createImageView(depth_image_.image,
                                         depth_image_.format,
@@ -270,7 +269,7 @@ void VulkanRenderer::createCommandBuffers() noexcept {
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
     alloc_info.commandBufferCount = kMaxFramesInFlight;
 
-    command_buffers_ = device_.device().allocateCommandBuffers(alloc_info);
+    command_buffers_ = device_.allocateCommandBuffers(alloc_info);
     assert(command_buffers_.size() == kMaxFramesInFlight);
 }
 
@@ -373,12 +372,12 @@ void VulkanRenderer::createSyncObjects() noexcept {
     vk::FenceCreateInfo fence_info{vk::FenceCreateFlagBits::eSignaled};
 
     for (uint32_t i = 0; i < swapchain_.images.size(); i++) {
-        sem_render_done_.push_back(device_.device().createSemaphore({}));
+        sem_render_done_.push_back(device_.createSemaphore({}));
     }
 
     for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
-        sem_present_done_.push_back(device_.device().createSemaphore({}));
-        draw_fences_.push_back(device_.device().createFence(fence_info));
+        sem_present_done_.push_back(device_.createSemaphore({}));
+        draw_fences_.push_back(device_.createFence(fence_info));
     }
 
     assert(sem_render_done_.size() == swapchain_.images.size());
@@ -417,15 +416,15 @@ bool VulkanRenderer::drawFrame() {
     assert(command_buffers_.size() == kMaxFramesInFlight);
     assert(uniform_buffers_.size() == kMaxFramesInFlight);
 
-    vk::Result result = device_.device().waitForFences(1,
+    vk::Result result = device_.waitForFences(1,
         &draw_fences_[frame_i_], VK_TRUE, UINT64_MAX);
     assert(result == vk::Result::eSuccess);
 
-    result = device_.device().resetFences(1, &draw_fences_[frame_i_]);
+    result = device_.resetFences(1, &draw_fences_[frame_i_]);
     assert(result == vk::Result::eSuccess);
 
     uint32_t img_i;
-    result = device_.device().acquireNextImageKHR(swapchain_.swapchain,
+    result = device_.acquireNextImageKHR(swapchain_.swapchain,
         UINT64_MAX, sem_present_done_[frame_i_], nullptr, &img_i);
     switch (result) {
         case vk::Result::eErrorOutOfDateKHR:
@@ -452,12 +451,12 @@ bool VulkanRenderer::drawFrame() {
                               &command_buffers_[frame_i_], 1,
                               &sem_render_done_[img_i]};
 
-    device_.submit(submitInfo, draw_fences_[frame_i_]);
+    graphics_queue_.submit(submitInfo, draw_fences_[frame_i_]);
 
     vk::PresentInfoKHR present_info{1, &sem_render_done_[img_i], 1,
                                     &swapchain_.swapchain, &img_i};
 
-    result = device_.present(present_info);
+    result = graphics_queue_.presentKHR(present_info);
     switch (result) {
         case vk::Result::eErrorOutOfDateKHR:
             [[fallthrough]];

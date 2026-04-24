@@ -9,14 +9,6 @@ class VulkanDeviceHandle {
     VulkanDeviceHandle() noexcept;
     ~VulkanDeviceHandle() noexcept;
 
-    inline const vk::Instance& instance() const noexcept { return instance_; }
-    inline const vk::Device device() const noexcept { return device_; }
-    inline const vk::Queue queue() const noexcept { return graphics_queue_; }
-    inline uint32_t queueIndex() const noexcept { return graphics_qf_idx_; }
-    inline const vk::PhysicalDevice& physicalDevice() const noexcept {
-        return physical_device_;
-    }
-
     void submit(const vk::SubmitInfo& info,
                 const vk::Fence fence = nullptr) const noexcept {
         graphics_queue_.submit(info, fence);
@@ -37,7 +29,7 @@ class VulkanDeviceHandle {
         const uint32_t type_filter,
         const vk::MemoryPropertyFlags prop_flags) const noexcept;
 
- private:
+ protected:
     void createInstance() noexcept;
 
     void selectPhysicalDevice() noexcept;

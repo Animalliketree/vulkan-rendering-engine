@@ -14,7 +14,7 @@ void VulkanRenderer::createDescriptorPool() noexcept {
 
     vk::DescriptorPoolCreateInfo create_info{{}, kMaxFramesInFlight, 1, &size};
 
-    descriptor_pool_ = device_.device().createDescriptorPool(create_info);
+    descriptor_pool_ = device_.createDescriptorPool(create_info);
     assert(descriptor_pool_ != nullptr);
 }
 
@@ -25,7 +25,7 @@ void VulkanRenderer::createDescriptorSetLayout() noexcept {
 
     vk::DescriptorSetLayoutCreateInfo create_info{{}, 1, &ubo_binding};
 
-    descriptor_set_layout_ = device_.device().createDescriptorSetLayout(create_info);
+    descriptor_set_layout_ = device_.createDescriptorSetLayout(create_info);
 
     assert(descriptor_set_layout_ != nullptr);
 }
@@ -40,7 +40,7 @@ void VulkanRenderer::createDescriptorSets() noexcept {
     vk::DescriptorSetAllocateInfo alloc_info{descriptor_pool_,
         kMaxFramesInFlight, layouts.data()};
 
-    descriptor_sets_ = device_.device().allocateDescriptorSets(alloc_info);
+    descriptor_sets_ = device_.allocateDescriptorSets(alloc_info);
 
     for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
         vk::DescriptorBufferInfo buf_info{uniform_buffers_[i].buffer, 0,
@@ -50,7 +50,7 @@ void VulkanRenderer::createDescriptorSets() noexcept {
                                           vk::DescriptorType::eUniformBuffer,
                                           {}, &buf_info};
 
-        device_.device().updateDescriptorSets(write_info, {});
+        device_.updateDescriptorSets(write_info, {});
     }
 
     assert(descriptor_sets_.size() == kMaxFramesInFlight);
