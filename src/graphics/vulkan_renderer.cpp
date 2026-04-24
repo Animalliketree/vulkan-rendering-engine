@@ -171,14 +171,14 @@ void VulkanRenderer::copyBuffer(const vk::Buffer& src, const vk::Buffer& dst,
 template<typename T, size_t N>
 void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
                                       const vk::BufferUsageFlags usage,
-                                      BufferHandle& dst) noexcept {
+                                      BufferHandle& buf) noexcept {
     vk::DeviceSize buffer_size = sizeof(data[0]) * data.size();
 
     BufferHandle staging_buf = createBuffer(buffer_size,
         vk::MemoryPropertyFlagBits::eHostVisible
         | vk::MemoryPropertyFlagBits::eHostCoherent,
         vk::BufferUsageFlagBits::eTransferSrc);
-    dst = createBuffer(buffer_size,
+    buf = createBuffer(buffer_size,
         vk::MemoryPropertyFlagBits::eDeviceLocal,
         usage | vk::BufferUsageFlagBits::eTransferDst);
 
@@ -187,7 +187,7 @@ void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
     SDL_memcpy(mem, data.data(), buffer_size);
     device_.device().unmapMemory(staging_buf.memory);
 
-    copyBuffer(staging_buf.buffer, dst.buffer, buffer_size);
+    copyBuffer(staging_buf.buffer, buf.buffer, buffer_size);
     device_.device().destroyBuffer(staging_buf.buffer);
     device_.device().freeMemory(staging_buf.memory);
 }
@@ -363,7 +363,7 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
         vk::PipelineStageFlagBits2::eBottomOfPipe,
         vk::ImageAspectFlagBits::eColor);
 
-    vkEndCommandBuffer(cmd_buf);
+    cmd_buf.end();
 }
 
 void VulkanRenderer::createSyncObjects() noexcept {
@@ -421,6 +421,9 @@ bool VulkanRenderer::drawFrame() {
         &draw_fences_[frame_i_], VK_TRUE, UINT64_MAX);
     assert(result == vk::Result::eSuccess);
 
+    result = device_.device().resetFences(1, &draw_fences_[frame_i_]);
+    assert(result == vk::Result::eSuccess);
+
     uint32_t img_i;
     result = device_.device().acquireNextImageKHR(swapchain_.swapchain,
         UINT64_MAX, sem_present_done_[frame_i_], nullptr, &img_i);
@@ -436,9 +439,6 @@ bool VulkanRenderer::drawFrame() {
         default:
             throw std::runtime_error("Failed to acquire next image!");
     }
-
-    result = device_.device().resetFences(1, &draw_fences_[frame_i_]);
-    assert(result == vk::Result::eSuccess);
 
     command_buffers_[frame_i_].reset();
     recordCommandBuffer(img_i);
@@ -460,8 +460,7 @@ bool VulkanRenderer::drawFrame() {
     result = device_.present(present_info);
     switch (result) {
         case vk::Result::eErrorOutOfDateKHR:
-            recreateSwapchain();
-            return false;
+            [[fallthrough]];
         case vk::Result::eSuboptimalKHR:
             recreateSwapchain();
             return false;

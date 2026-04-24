@@ -83,7 +83,25 @@ class VulkanRenderer {
     // Requires device_
     void createSwapchain(vk::SwapchainKHR old_swapchain) noexcept;
 
-    void recreateSwapchain();
+    void createImageViews() noexcept;
+
+    void createCommandPool() noexcept;
+
+    void createDepthResources() noexcept;
+
+    void createCommandBuffers() noexcept;
+
+    void createUniformBuffers() noexcept;
+
+    void createDescriptorPool() noexcept;
+
+    void createDescriptorSetLayout() noexcept;
+
+    void createDescriptorSets() noexcept;
+
+    void createGraphicsPipeline() noexcept;
+
+    void createSyncObjects() noexcept;
 
     void createShaderModule(const std::vector<char>& code) noexcept;
 
@@ -92,13 +110,12 @@ class VulkanRenderer {
         const vk::Format format,
         const vk::ImageAspectFlags flags) noexcept;
 
-    // Requires swapchain
-    void createImageViews() noexcept;
-
     BufferHandle createBuffer(
         const vk::DeviceSize size,
         const vk::MemoryPropertyFlags props,
         const vk::BufferUsageFlags usage) noexcept;
+
+    vk::PipelineLayout createGraphicsPipelineLayout() noexcept;
 
     void copyBuffer(
         const vk::Buffer& src,
@@ -111,24 +128,6 @@ class VulkanRenderer {
         const vk::BufferUsageFlags usage,
         BufferHandle& dst) noexcept;
 
-    void createUniformBuffers() noexcept;
-
-    void createDescriptorSetLayout() noexcept;
-
-    vk::PipelineLayout createGraphicsPipelineLayout() noexcept;
-
-    void createGraphicsPipeline() noexcept;
-
-    void createCommandPool() noexcept;
-
-    void createDepthResources() noexcept;
-
-    void createCommandBuffers() noexcept;
-
-    void createDescriptorPool() noexcept;
-
-    void createDescriptorSets() noexcept;
-
     // Drawing Methods
     void transitionImageLayout(
         const vk::Image& img,
@@ -140,21 +139,21 @@ class VulkanRenderer {
         const vk::PipelineStageFlags2 dst_stage_mask,
         const vk::ImageAspectFlags aspect);
 
-    void recordCommandBuffer(uint32_t image_index);
+    void recreateSwapchain();
 
-    void createSyncObjects() noexcept;
+    void recordCommandBuffer(uint32_t image_index);
 
     void updateUniformBuffer(uint32_t img_idx);
 
     uint32_t frame_i_ = 0;
     VkSurfaceKHR surface_ = nullptr;
-    SwapchainHandle swapchain_ = {};
+    SwapchainHandle swapchain_{};
 
     vk::CommandPool command_pool_ = nullptr;
     std::vector<vk::CommandBuffer> command_buffers_;
 
-    BufferHandle vertex_buffer_ = {};
-    BufferHandle index_buffer_ = {};
+    BufferHandle vertex_buffer_{};
+    BufferHandle index_buffer_{};
 
     std::vector<BufferHandle> uniform_buffers_;
     std::vector<void*> uniform_buffer_maps_;
