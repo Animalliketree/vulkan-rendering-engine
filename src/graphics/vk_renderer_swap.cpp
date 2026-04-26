@@ -1,18 +1,18 @@
 /* Copyright 2026 Alix Boivin */
 
+#include <cstdint>
+#include <volk.h>
 #include <algorithm>
 #include <cassert>
 #include <vector>
-#include <vulkan/vulkan.hpp>
 
 #include "../graphics/vulkan_renderer.hpp"
-#include "vulkan/vulkan.hpp"
 
 namespace {
 constexpr uint32_t kWindowWidth = 800;
 constexpr uint32_t kWindowHeight = 600;
 
-vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR cap) {
+VkExtent2D chooseSwapExtent(VkSurfaceCapabilitiesKHR cap) {
     if (cap.currentExtent.width != UINT32_MAX)
         return cap.currentExtent;
     else return {
@@ -23,88 +23,126 @@ vk::Extent2D chooseSwapExtent(vk::SurfaceCapabilitiesKHR cap) {
     };
 }
 
-vk::SurfaceFormatKHR chooseFromList(std::vector<vk::SurfaceFormatKHR> fmts) {
+VkSurfaceFormatKHR chooseFromList(std::vector<VkSurfaceFormatKHR> fmts) {
     assert(fmts.size() > 0);
 
-    const vk::Format kDesiredFmt = vk::Format::eB8G8R8A8Srgb;
-    for (vk::SurfaceFormatKHR format : fmts) {
+    const VkFormat kDesiredFmt = VK_FORMAT_B8G8R8A8_SRGB;
+    for (VkSurfaceFormatKHR format : fmts) {
         if (format.format == kDesiredFmt) return format;
     }
 
     return fmts[0];
 }
 
-vk::PresentModeKHR chooseFromList(std::vector<vk::PresentModeKHR> modes) {
+VkPresentModeKHR chooseFromList(std::vector<VkPresentModeKHR> modes) {
     assert(modes.size() > 0);
 
-    const vk::PresentModeKHR kDesiredMode = vk::PresentModeKHR::eMailbox;
-    for (vk::PresentModeKHR mode : modes) {
+    const VkPresentModeKHR kDesiredMode = VK_PRESENT_MODE_MAILBOX_KHR;
+    for (VkPresentModeKHR mode : modes) {
         if (mode == kDesiredMode) return mode;
     }
 
-    return vk::PresentModeKHR::eFifo;
+    return VK_PRESENT_MODE_FIFO_KHR;
 }
 }  // namespace
 
 namespace graphics::vk_renderer {
-vk::ImageView VulkanRenderer::createImageView(const vk::Image& img,
-                                              const vk::Format fmt,
-                                  const vk::ImageAspectFlags aspect) noexcept {
-    vk::ImageViewCreateInfo info{{}, img, vk::ImageViewType::e2D, fmt,
-                                 {vk::ComponentSwizzle::eIdentity},
-                                 {aspect, 0, 1, 0, 1}};
-
-    return device_.createImageView(info);
+VkImageView VulkanRenderer::createImageView(const VkImage& img,
+                                              const VkFormat fmt,
+                                  const VkImageAspectFlags aspect) noexcept {
+    VkImageViewCreateInfo info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .image = img,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = fmt,
+        .components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
+        .subresourceRange = {aspect, 0, 1, 0, 1}};
+    VkImageView view;
+    vkCreateImageView(device_, &info, nullptr, &view);
+    return view;
 }
 
 void VulkanRenderer::createImageViews() noexcept {
     assert(swapchain_.image_views.empty());
 
-    for (vk::Image img : swapchain_.images) {
+    for (VkImage img : swapchain_.images) {
         swapchain_.image_views.push_back(createImageView(img,
-                swapchain_.format.format, vk::ImageAspectFlagBits::eColor));
+                swapchain_.format.format, VK_IMAGE_ASPECT_COLOR_BIT));
     }
 
     assert(swapchain_.image_views.size() == swapchain_.images.size());
 }
 
-void VulkanRenderer::createSwapchain(vk::SwapchainKHR old_swapchain) noexcept {
+void VulkanRenderer::createSwapchain(VkSwapchainKHR old_swapchain) noexcept {
     assert(surface_ != nullptr);
 
-    vk::SurfaceCapabilitiesKHR capabilities =
-        physical_device_.getSurfaceCapabilitiesKHR(surface_);
-    assert(capabilities != nullptr);
+    VkSurfaceCapabilitiesKHR caps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &caps);
 
-    swapchain_.extent = chooseSwapExtent(capabilities);
+    swapchain_.extent = chooseSwapExtent(caps);
 
-    swapchain_.format = chooseFromList(
-        physical_device_.getSurfaceFormatsKHR(surface_));
+    uint32_t num_fmts;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_fmts,
+                                         nullptr);
+    std::vector<VkSurfaceFormatKHR> fmts(num_fmts);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_fmts,
+                                         fmts.data());
 
-    uint32_t min_images = capabilities.maxImageCount > 0
-        ? std::min(capabilities.minImageCount + 1, capabilities.maxImageCount)
-        : capabilities.minImageCount + 1;
+    uint32_t num_pms;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_,
+                                              &num_pms, nullptr);
+    std::vector<VkPresentModeKHR> pms(num_pms);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_,
+                                              &num_pms, pms.data());
 
-    vk::SwapchainCreateInfoKHR swapchain_info{{}, surface_, min_images,
-        swapchain_.format.format, swapchain_.format.colorSpace,
-        swapchain_.extent, 1, vk::ImageUsageFlagBits::eColorAttachment,
-        vk::SharingMode::eExclusive, 0, {}, capabilities.currentTransform,
-        vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        chooseFromList(physical_device_.getSurfacePresentModesKHR(surface_)),
-        vk::True, old_swapchain};
+    swapchain_.format = chooseFromList(fmts);
 
-    swapchain_.swapchain = device_.createSwapchainKHR(swapchain_info);
+    uint32_t min_images = caps.maxImageCount > 0
+        ? std::min(caps.minImageCount + 1, caps.maxImageCount)
+        : caps.minImageCount + 1;
+
+    VkSwapchainCreateInfoKHR swapchain_info{
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .flags = 0,
+        .surface = surface_,
+        .minImageCount = min_images,
+        .imageFormat = swapchain_.format.format,
+        .imageColorSpace = swapchain_.format.colorSpace,
+        .imageExtent = swapchain_.extent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .preTransform = caps.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = chooseFromList(pms),
+        .clipped = VK_TRUE,
+        .oldSwapchain = old_swapchain};
+
+    vkCreateSwapchainKHR(device_, &swapchain_info, nullptr,
+                         &swapchain_.swapchain);
     assert(swapchain_.swapchain != nullptr);
 
-    device_.destroySwapchainKHR(old_swapchain);
-
-    swapchain_.images = device_.getSwapchainImagesKHR(swapchain_.swapchain);
+    vkDestroySwapchainKHR(device_, old_swapchain, nullptr);
+    
+    uint32_t num_imgs;
+    vkGetSwapchainImagesKHR(device_, swapchain_.swapchain, &num_imgs, nullptr);
+    swapchain_.images.resize(num_imgs);
+    vkGetSwapchainImagesKHR(device_, swapchain_.swapchain, &num_imgs,
+                            swapchain_.images.data());
 }
 
 void VulkanRenderer::recreateSwapchain() {
-    device_.waitIdle();
+    vkDeviceWaitIdle(device_);
 
-    for (vk::ImageView view : swapchain_.image_views)
-        device_.destroyImageView(view);
+    for (VkImageView view : swapchain_.image_views)
+        vkDestroyImageView(device_, view, nullptr);
     swapchain_.image_views.clear();
 
     createSwapchain(swapchain_.swapchain);

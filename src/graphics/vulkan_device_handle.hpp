@@ -1,7 +1,8 @@
 #ifndef SRC_GRAPHICS_VULKAN_DEVICE_HPP_
 #define SRC_GRAPHICS_VULKAN_DEVICE_HPP_
 
-#include "vulkan/vulkan.hpp"
+#include <volk.h>
+#include <vector>
 #include <cstdint>
 namespace graphics::vulkan::device {
 class VulkanDeviceHandle {
@@ -9,25 +10,14 @@ class VulkanDeviceHandle {
     VulkanDeviceHandle() noexcept;
     ~VulkanDeviceHandle() noexcept;
 
-    void submit(const vk::SubmitInfo& info,
-                const vk::Fence fence = nullptr) const noexcept {
-        graphics_queue_.submit(info, fence);
-    }
-
-    vk::Result present(const vk::PresentInfoKHR& info) const noexcept {
-        return graphics_queue_.presentKHR(info);
-    }
-
-    void queueWaitIdle() const noexcept { graphics_queue_.waitIdle(); }
-
-    vk::Format findDesiredFormat(
-        const std::vector<vk::Format>& candidates,
-        const vk::ImageTiling tiling,
-        const vk::FormatFeatureFlags features) const noexcept;
+    VkFormat findDesiredFormat(
+        const std::vector<VkFormat>& candidates,
+        const VkImageTiling tiling,
+        const VkFormatFeatureFlags features) const noexcept;
 
     uint32_t findMemoryType(
         const uint32_t type_filter,
-        const vk::MemoryPropertyFlags prop_flags) const noexcept;
+        const VkMemoryPropertyFlags prop_flags) const noexcept;
 
  protected:
     void createInstance() noexcept;
@@ -37,13 +27,13 @@ class VulkanDeviceHandle {
     void createLogicalDevice() noexcept;
 
     uint32_t getQueueFamilyIndex(
-        const vk::PhysicalDevice device) const noexcept;
+        const VkPhysicalDevice device) const noexcept;
 
     uint32_t graphics_qf_idx_ = UINT32_MAX;
-    vk::Instance instance_ = nullptr;
-    vk::PhysicalDevice physical_device_ = nullptr;
-    vk::Device device_ = nullptr;
-    vk::Queue graphics_queue_ = nullptr;
+    VkInstance instance_ = nullptr;
+    VkPhysicalDevice physical_device_ = nullptr;
+    VkDevice device_ = nullptr;
+    VkQueue graphics_queue_ = nullptr;
 };
 }  // namespace graphics::vulkan::device
 

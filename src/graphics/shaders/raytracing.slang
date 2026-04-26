@@ -1,0 +1,4 @@
+[shader("raygen")]
+void raygenMain() {
+
+}

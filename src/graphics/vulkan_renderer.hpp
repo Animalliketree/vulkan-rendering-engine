@@ -3,58 +3,60 @@
 #ifndef SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 #define SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 
-#include "vulkan/vulkan.hpp"
-#include "vulkan_device_handle.hpp"
 #include <SDL3/SDL_video.h>
 #include <cstdint>
 #include <chrono>
 #include <glm/ext/vector_float3.hpp>
 #include <vector>
-#include <vulkan/vulkan.hpp>
+#include <volk.h>
 #include <glm/glm.hpp>
+
+#include "../graphics/vulkan_device_handle.hpp"
 
 namespace graphics::vk_renderer {
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
 
-    static vk::VertexInputBindingDescription getBindingDescription() {
-        return {0, sizeof(Vertex), vk::VertexInputRate::eVertex};
+    static VkVertexInputBindingDescription getBindingDescription() {
+        return {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 2>
+    static std::array<VkVertexInputAttributeDescription, 2>
     getAttributeDescription() {
         return {{
-            {0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos)},
-            {1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color)}}};
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
+            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)}}};
     }
 };
 
+struct Voxel { glm::vec3 color; };
+
 struct BufferHandle {
-    vk::Buffer buffer = nullptr;
-    vk::DeviceSize offset = 0;
-    vk::DeviceMemory memory = nullptr;
+    VkBuffer buffer = nullptr;
+    VkDeviceSize offset = 0;
+    VkDeviceMemory memory = nullptr;
 };
 
 struct SwapchainHandle {
-    vk::SwapchainKHR swapchain = nullptr;
-    std::vector<vk::Image> images;
-    std::vector<vk::ImageView> image_views;
-    vk::SurfaceFormatKHR format;
-    vk::Extent2D extent;
+    VkSwapchainKHR swapchain = nullptr;
+    std::vector<VkImage> images;
+    std::vector<VkImageView> image_views;
+    VkSurfaceFormatKHR format;
+    VkExtent2D extent;
 };
 
-struct GraphicsPipelineHandle {
-    vk::ShaderModule shader_module = nullptr;
-    vk::PipelineLayout layout = nullptr;
-    vk::Pipeline pipeline = nullptr;
+struct PipelineHandle {
+    VkShaderModule shader_module = nullptr;
+    VkPipelineLayout layout = nullptr;
+    VkPipeline pipeline = nullptr;
 };
 
 struct DepthImage {
-    vk::Image image = nullptr;
-    vk::DeviceMemory memory = nullptr;
-    vk::ImageView view = nullptr;
-    vk::Format format;
+    VkImage image = nullptr;
+    VkDeviceMemory memory = nullptr;
+    VkImageView view = nullptr;
+    VkFormat format;
 };
 
 struct Camera {
@@ -63,7 +65,7 @@ struct Camera {
     glm::vec3 up = glm::vec3(0.0f);
 };
 
-class VulkanRenderer : private vulkan::device::VulkanDeviceHandle {
+class VulkanRenderer : private graphics::vulkan::device::VulkanDeviceHandle {
  public:
     explicit VulkanRenderer(SDL_Window* window) noexcept;
     ~VulkanRenderer() noexcept;
@@ -80,7 +82,7 @@ class VulkanRenderer : private vulkan::device::VulkanDeviceHandle {
         std::chrono::duration<int64_t, std::ratio<1, 1000000000>>>;
 
     // Requires device_
-    void createSwapchain(vk::SwapchainKHR old_swapchain) noexcept;
+    void createSwapchain(VkSwapchainKHR old_swapchain) noexcept;
 
     void createImageViews() noexcept;
 
@@ -102,41 +104,42 @@ class VulkanRenderer : private vulkan::device::VulkanDeviceHandle {
 
     void createSyncObjects() noexcept;
 
-    void createShaderModule(const std::vector<char>& code) noexcept;
+    VkShaderModule createShaderModule(
+        const std::vector<char>& code) noexcept;
 
-    vk::ImageView createImageView(
-        const vk::Image& img,
-        const vk::Format format,
-        const vk::ImageAspectFlags flags) noexcept;
+    VkImageView createImageView(
+        const VkImage& img,
+        const VkFormat format,
+        const VkImageAspectFlags flags) noexcept;
 
     BufferHandle createBuffer(
-        const vk::DeviceSize size,
-        const vk::MemoryPropertyFlags props,
-        const vk::BufferUsageFlags usage) noexcept;
+        const VkDeviceSize size,
+        const VkMemoryPropertyFlags props,
+        const VkBufferUsageFlags usage) noexcept;
 
-    vk::PipelineLayout createGraphicsPipelineLayout() noexcept;
+    VkPipelineLayout createGraphicsPipelineLayout() noexcept;
 
     void copyBuffer(
-        const vk::Buffer& src,
-        const vk::Buffer& dst,
-        const vk::DeviceSize buffer_size) noexcept;
+        const VkBuffer& src,
+        const VkBuffer& dst,
+        const VkDeviceSize buffer_size) noexcept;
 
     template<typename T, size_t N>
     void loadDataOntoDevice(
         const std::array<T, N> data,
-        const vk::BufferUsageFlags usage,
+        const VkBufferUsageFlags usage,
         BufferHandle& dst) noexcept;
 
     // Drawing Methods
     void transitionImageLayout(
-        const vk::Image& img,
-        const vk::ImageLayout old_layout,
-        const vk::ImageLayout new_layout,
-        const vk::AccessFlags2 src_access_mask,
-        const vk::AccessFlags2 dst_access_mask,
-        const vk::PipelineStageFlags2 src_stage_mask,
-        const vk::PipelineStageFlags2 dst_stage_mask,
-        const vk::ImageAspectFlags aspect);
+        const VkImage& img,
+        const VkImageLayout old_layout,
+        const VkImageLayout new_layout,
+        const VkAccessFlags2 src_access_mask,
+        const VkAccessFlags2 dst_access_mask,
+        const VkPipelineStageFlags2 src_stage_mask,
+        const VkPipelineStageFlags2 dst_stage_mask,
+        const VkImageAspectFlags aspect);
 
     void recreateSwapchain();
 
@@ -148,8 +151,8 @@ class VulkanRenderer : private vulkan::device::VulkanDeviceHandle {
     VkSurfaceKHR surface_ = nullptr;
     SwapchainHandle swapchain_{};
 
-    vk::CommandPool command_pool_ = nullptr;
-    std::vector<vk::CommandBuffer> command_buffers_;
+    VkCommandPool command_pool_ = nullptr;
+    std::vector<VkCommandBuffer> command_buffers_;
 
     BufferHandle vertex_buffer_{};
     BufferHandle index_buffer_{};
@@ -157,15 +160,15 @@ class VulkanRenderer : private vulkan::device::VulkanDeviceHandle {
     std::vector<BufferHandle> uniform_buffers_;
     std::vector<void*> uniform_buffer_maps_;
 
-    vk::DescriptorPool descriptor_pool_ = nullptr;
-    vk::DescriptorSetLayout descriptor_set_layout_ = nullptr;
-    std::vector<vk::DescriptorSet> descriptor_sets_;
+    VkDescriptorPool descriptor_pool_ = nullptr;
+    VkDescriptorSetLayout descriptor_set_layout_ = nullptr;
+    std::vector<VkDescriptorSet> descriptor_sets_;
 
-    GraphicsPipelineHandle graphics_pipeline_ = {};
+    PipelineHandle graphics_pipeline_{};
 
-    std::vector<vk::Semaphore> sem_present_done_;
-    std::vector<vk::Semaphore> sem_render_done_;
-    std::vector<vk::Fence> draw_fences_;
+    std::vector<VkSemaphore> sem_present_done_;
+    std::vector<VkSemaphore> sem_render_done_;
+    std::vector<VkFence> draw_fences_;
 
     DepthImage depth_image_;
 
