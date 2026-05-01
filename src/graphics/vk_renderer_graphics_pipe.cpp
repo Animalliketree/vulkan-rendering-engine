@@ -14,7 +14,7 @@ namespace {
 constexpr char kProjectRoot[] =
 "/home/arboivin/alix-baque/maison/projets/voxel-engine";
 
-const char kShaderFile[] = "/appdata/slang.spv";
+const char kShaderFile[] = "/appdata/graphics.spv";
 
 std::vector<char> readFile(const std::string file_name) {
     assert(!file_name.empty());
