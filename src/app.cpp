@@ -3,6 +3,7 @@
 #include "../src/app.hpp"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_events.h>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <quill/LogFunctions.h>
@@ -28,14 +29,9 @@ SDLWindow::SDLWindow() noexcept {
     assert(window_ != nullptr);
 }
 
-bool App::pollEvent(SDL_Event& event) {
-    bool result = SDL_PollEvent(&event);
-    switch (event.type) {
-        case SDL_EVENT_WINDOW_RESIZED:
-            renderer_.flagResized();
-            [[fallthrough]];
-        default:
-            return result;
-    }
+bool App::pollEvent(SDL_Event& event) noexcept {
+    const bool result = SDL_PollEvent(&event);
+    if (event.type == SDL_EVENT_WINDOW_RESIZED) renderer_.flagResized();
+    return result;
 }
 }  // namespace app

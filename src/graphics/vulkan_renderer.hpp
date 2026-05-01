@@ -4,29 +4,33 @@
 #define SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 
 #include <SDL3/SDL_video.h>
+#include <cstddef>
 #include <cstdint>
 #include <chrono>
 #include <glm/ext/vector_float3.hpp>
 #include <vector>
 #include <volk.h>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan_core.h>
 
-#include "../graphics/vulkan_device_handle.hpp"
+#include "../graphics/vulkan_context.hpp"
 
 namespace graphics::vk_renderer {
 struct Vertex {
     glm::vec3 pos;
-    glm::vec3 color;
+    glm::vec3 normal;
+    glm::vec2 uv;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         return {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2>
+    static std::array<VkVertexInputAttributeDescription, 3>
     getAttributeDescription() {
         return {{
             {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
-            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)}}};
+            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)},
+            {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)}}};
     }
 };
 
@@ -65,7 +69,7 @@ struct Camera {
     glm::vec3 up = glm::vec3(0.0f);
 };
 
-class VulkanRenderer : private graphics::vulkan::device::VulkanDeviceHandle {
+class VulkanRenderer : private graphics::vulkan::VulkanContext {
  public:
     explicit VulkanRenderer(SDL_Window* window) noexcept;
     ~VulkanRenderer() noexcept;
@@ -75,11 +79,12 @@ class VulkanRenderer : private graphics::vulkan::device::VulkanDeviceHandle {
     bool drawFrame();
 
  private:
-    const uint32_t kMaxFramesInFlight = 2;
-
     using Time = std::chrono::time_point<
         std::chrono::system_clock,
         std::chrono::duration<int64_t, std::ratio<1, 1000000000>>>;
+
+        const uint32_t kMaxFramesInFlight = 2;
+    const Time start_time_ = std::chrono::high_resolution_clock::now();
 
     // Requires device_
     void createSwapchain(VkSwapchainKHR old_swapchain) noexcept;
@@ -141,24 +146,15 @@ class VulkanRenderer : private graphics::vulkan::device::VulkanDeviceHandle {
         const VkPipelineStageFlags2 dst_stage_mask,
         const VkImageAspectFlags aspect);
 
-    void recreateSwapchain();
+    void recreateSwapchain() noexcept;
 
     void recordCommandBuffer(uint32_t image_index);
 
     void updateUniformBuffer(uint32_t img_idx);
 
-    uint32_t frame_i_ = 0;
-    VkSurfaceKHR surface_ = nullptr;
-    SwapchainHandle swapchain_{};
-
+    // Command stuff
     VkCommandPool command_pool_ = nullptr;
     std::vector<VkCommandBuffer> command_buffers_;
-
-    BufferHandle vertex_buffer_{};
-    BufferHandle index_buffer_{};
-
-    std::vector<BufferHandle> uniform_buffers_;
-    std::vector<void*> uniform_buffer_maps_;
 
     VkDescriptorPool descriptor_pool_ = nullptr;
     VkDescriptorSetLayout descriptor_set_layout_ = nullptr;
@@ -166,17 +162,24 @@ class VulkanRenderer : private graphics::vulkan::device::VulkanDeviceHandle {
 
     PipelineHandle graphics_pipeline_{};
 
+    DepthImage depth_image_;
+
+    Camera cam_{};
+
+    // Presentation
+    uint32_t frame_i_ = 0;
+    VkSurfaceKHR surface_ = nullptr;
+    SwapchainHandle swapchain_{};
+    bool framebuffer_resized_ = false;
     std::vector<VkSemaphore> sem_present_done_;
     std::vector<VkSemaphore> sem_render_done_;
     std::vector<VkFence> draw_fences_;
 
-    DepthImage depth_image_;
-
-    Time start_time_ = std::chrono::high_resolution_clock::now();
-
-    bool framebuffer_resized_ = false;
-
-    Camera cam_;
+    // Memory management
+    BufferHandle vertex_buffer_{};
+    BufferHandle index_buffer_{};
+    std::vector<BufferHandle> uniform_buffers_;
+    std::vector<void*> uniform_buffer_maps_;
 };
 }  // namespace graphics::vk_renderer
 

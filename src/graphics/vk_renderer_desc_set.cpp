@@ -3,45 +3,47 @@
 #include <cassert>
 #include <vector>
 #include <volk.h>
+#include <vulkan/vulkan_core.h>
 
 #include "../graphics/vulkan_renderer.hpp"
 
 namespace graphics::vk_renderer {
 void VulkanRenderer::createDescriptorPool() noexcept {
-    VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                                kMaxFramesInFlight};
-
-    VkDescriptorPoolCreateInfo create_info{
+    const VkDescriptorPoolSize size{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = kMaxFramesInFlight
+    };
+    const VkDescriptorPoolCreateInfo create_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .maxSets = kMaxFramesInFlight,
         .poolSizeCount = 1,
-        .pPoolSizes = &size};
+        .pPoolSizes = &size
+    };
 
-    vkCreateDescriptorPool(device_, &create_info, nullptr, &descriptor_pool_);
-    assert(descriptor_pool_ != nullptr);
+    assert(vkCreateDescriptorPool(device_, &create_info, nullptr,
+                                  &descriptor_pool_) == VK_SUCCESS);
 }
 
 void VulkanRenderer::createDescriptorSetLayout() noexcept {
-    VkDescriptorSetLayoutBinding ubo_binding{
+    constexpr VkDescriptorSetLayoutBinding ubo_binding{
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .pImmutableSamplers = nullptr};
-
-    VkDescriptorSetLayoutCreateInfo create_info{
+        .pImmutableSamplers = nullptr
+    };
+    const VkDescriptorSetLayoutCreateInfo create_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .bindingCount = 1,
-        .pBindings = &ubo_binding};
+        .pBindings = &ubo_binding
+    };
 
-    vkCreateDescriptorSetLayout(device_, &create_info, nullptr,
-                                &descriptor_set_layout_);
-
-    assert(descriptor_set_layout_ != nullptr);
+    assert(vkCreateDescriptorSetLayout(device_, &create_info, nullptr,
+                                       &descriptor_set_layout_) == VK_SUCCESS);
 }
 
 void VulkanRenderer::createDescriptorSets() noexcept {
@@ -49,23 +51,26 @@ void VulkanRenderer::createDescriptorSets() noexcept {
     assert(uniform_buffers_.size() == kMaxFramesInFlight);
 
     std::vector<VkDescriptorSetLayout> layouts(kMaxFramesInFlight,
-                                                 descriptor_set_layout_);
+                                               descriptor_set_layout_);
 
-    VkDescriptorSetAllocateInfo alloc_info{
+    const VkDescriptorSetAllocateInfo alloc_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = nullptr,
         .descriptorPool = descriptor_pool_,
         .descriptorSetCount = kMaxFramesInFlight,
-        .pSetLayouts = layouts.data()};
-
+        .pSetLayouts = layouts.data()
+    };
     descriptor_sets_.resize(kMaxFramesInFlight);
-    vkAllocateDescriptorSets(device_, &alloc_info, descriptor_sets_.data());
+    assert(vkAllocateDescriptorSets(device_, &alloc_info,
+                                    descriptor_sets_.data()) == VK_SUCCESS);
 
     for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
-        VkDescriptorBufferInfo buf_info{uniform_buffers_[i].buffer, 0,
-                                        VK_WHOLE_SIZE};
-
-        VkWriteDescriptorSet write_info{
+        const VkDescriptorBufferInfo buf_info{
+            .buffer = uniform_buffers_[i].buffer,
+            .offset = 0,
+            .range = VK_WHOLE_SIZE
+        };
+        const VkWriteDescriptorSet write_info{
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .pNext = nullptr,
             .dstSet = descriptor_sets_[i],
@@ -75,7 +80,8 @@ void VulkanRenderer::createDescriptorSets() noexcept {
             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .pImageInfo = nullptr,
             .pBufferInfo = &buf_info,
-            .pTexelBufferView = nullptr};
+            .pTexelBufferView = nullptr
+        };
 
         vkUpdateDescriptorSets(device_, 1, &write_info, 0, nullptr);
     }

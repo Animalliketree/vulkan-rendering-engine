@@ -1,5 +1,6 @@
-add_subdirectory(graphics)
+find_library(Graphics graphics)
 
+add_subdirectory(graphics)
 add_library(App)
 target_sources(App
     PRIVATE
@@ -10,20 +11,19 @@ target_sources(App
         FILES app.hpp
 )
 
+target_link_libraries(App
+    PRIVATE
+        SDL3
+        Graphics
+)
+
 target_compile_options(App
     PRIVATE
         -Wall -Wextra -Wfloat-equal -Wundef
         -Wshadow -Wpointer-arith -Wcast-align
         -Wstrict-overflow=5 -Wwrite-strings -Wcast-qual
         -Wswitch-default -Wconversion -Wunreachable-code
-    
+
     PUBLIC
         -std=c++20
-)
-
-find_library(Graphics graphics)
-target_link_libraries(App
-    PRIVATE
-        SDL3
-        Graphics
 )

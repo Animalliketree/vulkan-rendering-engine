@@ -28,7 +28,7 @@ class App : private SDLWindow {
     App(const App&) = delete;
     App& operator=(const App&) = delete;
 
-    bool pollEvent(SDL_Event& event);
+    bool pollEvent(SDL_Event& event) noexcept;
     inline void drawFrame() { renderer_.drawFrame(); }
 
  private:

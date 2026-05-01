@@ -4,11 +4,11 @@
 #include <volk.h>
 #include <vector>
 #include <cstdint>
-namespace graphics::vulkan::device {
-class VulkanDeviceHandle {
+namespace graphics::vulkan {
+class VulkanContext {
  public:
-    VulkanDeviceHandle() noexcept;
-    ~VulkanDeviceHandle() noexcept;
+    VulkanContext() noexcept;
+    ~VulkanContext() noexcept;
 
     VkFormat findDesiredFormat(
         const std::vector<VkFormat>& candidates,

@@ -1,29 +1,32 @@
 struct VSInput {
-    float3 inPosition;
-    float3 inColor;
+    float3 pos;
+    float3 normal;
+    float2 uv;
 };
 
-struct UniformBuffer {
-    float4x4 model;
-    float4x4 view;
+struct ShaderData {
     float4x4 proj;
+    float4x4 view;
+    float4x4 model;
 };
-ConstantBuffer<UniformBuffer> ubo;
+ConstantBuffer<ShaderData> data;
 
 struct VSOutput {
     float4 pos : SV_Position;
-    float3 color;
+    float3 normal;
+    float2 uv;
 };
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPosition, 1.0))));
-    output.color = input.inColor;
+    output.pos = mul(data.proj, mul(data.view, mul(data.model, float4(input.pos.xyz, 1.0))));
+    output.normal = mul((float3x3)mul(data.view, data.model), input.normal);
+    output.uv = input.uv;
     return output;
 }
 
 [shader("fragment")]
 float4 fragMain(VSOutput inVert) : SV_Target {
-    return float4(inVert.color, 1.0);
+    return float4(inVert.normal, 1.0);
 }

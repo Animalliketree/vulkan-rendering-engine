@@ -1,4 +1,4 @@
-#include "vulkan_device_handle.hpp"
+#include "vulkan_context.hpp"
 
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
@@ -8,7 +8,6 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
-#include <vulkan/vulkan_core.h>
 
 
 namespace {
@@ -31,18 +30,6 @@ const std::vector<const char*> kRequiredDeviceExtensions = {
   VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
   VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
 };
-
-VkApplicationInfo buildAppInfo() {
-    VkApplicationInfo app_info{
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
-        .pNext = nullptr,
-        .pApplicationName = kAppTitle,
-        .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = kEngineTitle,
-        .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = VK_API_VERSION_1_4};
-    return app_info;
-}
 
 bool validationLayersSupported() {
     quill::Logger* log = quill::simple_logger();
@@ -100,9 +87,6 @@ std::vector<const char*> getInstanceExtensions() {
 bool evaluatePhysicalDeviceProperties(VkPhysicalDevice device) {
     assert(device != nullptr);
 
-    quill::Logger* log = quill::simple_logger();
-    quill::info(log, "Evaluating physical device properties...");
-
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(device, &props);
 
@@ -111,9 +95,6 @@ bool evaluatePhysicalDeviceProperties(VkPhysicalDevice device) {
 
 bool evaluateDeviceExtensions(VkPhysicalDevice device) {
     assert(device != nullptr);
-
-    quill::Logger* log = quill::simple_logger();
-    quill::info(log, "Evaluating physical device extensions...");
 
     uint32_t num_ext;
     assert(vkEnumerateDeviceExtensionProperties(device, nullptr, &num_ext, nullptr)
@@ -141,9 +122,6 @@ bool evaluateDeviceExtensions(VkPhysicalDevice device) {
 
 bool evaluatePhysicalDeviceFeatures(VkPhysicalDevice device) {
     assert(device != nullptr);
-
-    quill::Logger* log = quill::simple_logger();
-    quill::info(log, "Evaluating physical device features...");
 
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
@@ -175,8 +153,8 @@ bool evaluatePhysicalDeviceFeatures(VkPhysicalDevice device) {
 }
 }  // namespace
 
-namespace graphics::vulkan::device {
-VulkanDeviceHandle::VulkanDeviceHandle() noexcept {
+namespace graphics::vulkan {
+VulkanContext::VulkanContext() noexcept {
     assert(volkInitialize() == VK_SUCCESS);
     quill::Logger* log = quill::simple_logger();
 
@@ -192,12 +170,12 @@ VulkanDeviceHandle::VulkanDeviceHandle() noexcept {
     quill::info(log, "Finished initializing device!");
 }
 
-VulkanDeviceHandle::~VulkanDeviceHandle() noexcept {
+VulkanContext::~VulkanContext() noexcept {
     vkDestroyDevice(device_, nullptr);
     vkDestroyInstance(instance_, nullptr);
 }
 
-void VulkanDeviceHandle::createInstance() noexcept {
+void VulkanContext::createInstance() noexcept {
     quill::Logger* log = quill::simple_logger();
     bool layers_supported = validationLayersSupported();
 
@@ -205,7 +183,15 @@ void VulkanDeviceHandle::createInstance() noexcept {
     quill::info(log, "Getting instance extensions...");
     auto extensions = getInstanceExtensions();
 
-    VkApplicationInfo app_info = buildAppInfo();
+    VkApplicationInfo app_info{
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext = nullptr,
+        .pApplicationName = kAppTitle,
+        .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+        .pEngineName = kEngineTitle,
+        .engineVersion = VK_MAKE_VERSION(1, 0, 0),
+        .apiVersion = VK_API_VERSION_1_4
+    };
 
     VkInstanceCreateInfo instance_info{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -215,7 +201,8 @@ void VulkanDeviceHandle::createInstance() noexcept {
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = nullptr,
         .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-        .ppEnabledExtensionNames = extensions.data()};
+        .ppEnabledExtensionNames = extensions.data()
+    };
 
     if (layers_supported) {
         instance_info.enabledLayerCount =
@@ -228,20 +215,16 @@ void VulkanDeviceHandle::createInstance() noexcept {
         == VK_SUCCESS);
 }
 
-void VulkanDeviceHandle::selectPhysicalDevice() noexcept {
+void VulkanContext::selectPhysicalDevice() noexcept {
     assert(instance_ != nullptr);
 
-    quill::Logger* log = quill::simple_logger();
-    quill::info(log, "Getting phys. device count...");
     uint32_t num_devices = 0;
     assert(vkEnumeratePhysicalDevices(instance_, &num_devices, nullptr)
         == VK_SUCCESS);
     std::vector<VkPhysicalDevice> devices(num_devices);
-    quill::info(log, "Getting physical devices...");
     assert(vkEnumeratePhysicalDevices(instance_, &num_devices, devices.data())
         == VK_SUCCESS);
 
-    quill::info(log, "Evaluating physical devices...");
     bool device_found = false;
     for (VkPhysicalDevice device : devices) {
         if (!evaluatePhysicalDeviceProperties(device) ||
@@ -260,20 +243,20 @@ void VulkanDeviceHandle::selectPhysicalDevice() noexcept {
     assert(device_found);
 }
 
-void VulkanDeviceHandle::createLogicalDevice() noexcept {
+void VulkanContext::createLogicalDevice() noexcept {
     assert(physical_device_ != nullptr);
 
     constexpr float kQueuePriority = 0.5f;
 
     graphics_qf_idx_ = getQueueFamilyIndex(physical_device_);
-    VkDeviceQueueCreateInfo queue_info{
+    const VkDeviceQueueCreateInfo queue_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .queueFamilyIndex = graphics_qf_idx_,
         .queueCount = 1,
-        .pQueuePriorities = &kQueuePriority};
-
+        .pQueuePriorities = &kQueuePriority
+    };
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rt_feats{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
         .pNext = nullptr,
@@ -281,13 +264,13 @@ void VulkanDeviceHandle::createLogicalDevice() noexcept {
         .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
         .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
         .rayTracingPipelineTraceRaysIndirect = VK_FALSE,
-        .rayTraversalPrimitiveCulling = VK_FALSE};
-
+        .rayTraversalPrimitiveCulling = VK_FALSE
+    };
     VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT,
         .pNext = &rt_feats,
-        .extendedDynamicState = VK_TRUE};
-
+        .extendedDynamicState = VK_TRUE
+    };
     VkPhysicalDeviceVulkan13Features vk_1_3_features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .pNext = &extended_features,
@@ -305,13 +288,13 @@ void VulkanDeviceHandle::createLogicalDevice() noexcept {
         .shaderZeroInitializeWorkgroupMemory = VK_FALSE,
         .dynamicRendering = VK_TRUE,
         .shaderIntegerDotProduct = VK_FALSE,
-        .maintenance4 = VK_FALSE};
-
+        .maintenance4 = VK_FALSE
+    };
     VkPhysicalDeviceFeatures2 features_2{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &vk_1_3_features};
-
-    VkDeviceCreateInfo device_info{
+        .pNext = &vk_1_3_features
+    };
+    const VkDeviceCreateInfo device_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &features_2,
         .flags = 0,
@@ -321,13 +304,14 @@ void VulkanDeviceHandle::createLogicalDevice() noexcept {
         .ppEnabledLayerNames = nullptr,
         .enabledExtensionCount = static_cast<uint32_t>(kRequiredDeviceExtensions.size()),
         .ppEnabledExtensionNames = kRequiredDeviceExtensions.data(),
-        .pEnabledFeatures = nullptr};
+        .pEnabledFeatures = nullptr
+    };
 
     vkCreateDevice(physical_device_, &device_info, nullptr, &device_);
     assert(device_ != nullptr);
 }
 
-uint32_t VulkanDeviceHandle::getQueueFamilyIndex(
+uint32_t VulkanContext::getQueueFamilyIndex(
         const VkPhysicalDevice device) const noexcept {
     assert(device != nullptr);
 
@@ -346,13 +330,14 @@ uint32_t VulkanDeviceHandle::getQueueFamilyIndex(
     return UINT32_MAX;
 }
 
-VkFormat VulkanDeviceHandle::findDesiredFormat(
+VkFormat VulkanContext::findDesiredFormat(
         const std::vector<VkFormat>& candidates,
         const VkImageTiling tiling,
         const VkFormatFeatureFlags features) const noexcept {
     for (const VkFormat format : candidates) {
         VkFormatProperties props;
         vkGetPhysicalDeviceFormatProperties(physical_device_, format, &props);
+
         if (tiling == VK_IMAGE_TILING_LINEAR
                 && (props.linearTilingFeatures & features) == features) {
             return format;
@@ -365,7 +350,7 @@ VkFormat VulkanDeviceHandle::findDesiredFormat(
     std::abort();  // Failed to find a valid format from the list
 }
 
-uint32_t VulkanDeviceHandle::findMemoryType(
+uint32_t VulkanContext::findMemoryType(
         const uint32_t type_filter,
         const VkMemoryPropertyFlags prop_flags) const noexcept {
     VkPhysicalDeviceMemoryProperties props;
