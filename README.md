@@ -9,7 +9,16 @@ The following libraries are required to run the program:
 - [Volk](https://github.com/zeux/volk)
 - [Vulkan](https://www.vulkan.org/)
 
+### Using CMake
+1. Download and extract the .zip file
+2. Open a terminal at the extracted folder directory
+3. Run `cmake CMakeLists.txt`
+4. Run `make`
 ## Running the Program
-### Prerequisites
+To run the program, simply go to the repository and run `./VoxelEngine`.
 ## Testing the Program
+There are currently no tests written for the program.
 ## Gallery
+## Known Issues
+Low priority:
+- framerate randomly varies between program runs (e.g. 5-6k FPS one time, 7-8k the next)
