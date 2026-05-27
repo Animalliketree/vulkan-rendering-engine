@@ -1,4 +1,4 @@
-# vulkan-rendering-engine
+# Vulkan Rendering Engine
 ## Summary
 A 3D Vulkan rendering engine that can render two rotating squares.
 ## Program Setup
