@@ -19,6 +19,8 @@ To run the program, simply go to the repository and run `./VoxelEngine`.
 ## Testing the Program
 There are currently no tests written for the program.
 ## Gallery
+![A really impressive image of two loosely-stacked warm-coloured squares](./screenshots/VulkanEngine_1.png)
+![A really impressive image of two loosely-stacked cool-coloured squares rotated a bit more than the previous image](./screenshots/VulkanEngine_2.png)
 ## Known Issues
 Low priority:
 - framerate randomly varies between program runs (e.g. 5-6k FPS one time, 7-8k the next)
