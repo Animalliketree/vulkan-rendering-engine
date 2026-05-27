@@ -1,4 +1,0 @@
-[shader("raygen")]
-void raygenMain() {
-
-}

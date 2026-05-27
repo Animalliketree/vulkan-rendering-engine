@@ -154,7 +154,6 @@ class VulkanRenderer : private graphics::vulkan::VulkanContext {
 
     // Command stuff
     VkCommandPool command_pool_ = nullptr;
-    std::vector<VkCommandBuffer> command_buffers_;
 
     VkDescriptorPool descriptor_pool_ = nullptr;
     VkDescriptorSetLayout descriptor_set_layout_ = nullptr;
@@ -168,6 +167,7 @@ class VulkanRenderer : private graphics::vulkan::VulkanContext {
 
     // Presentation
     uint32_t frame_i_ = 0;
+    std::vector<VkCommandBuffer> command_buffers_;
     VkSurfaceKHR surface_ = nullptr;
     SwapchainHandle swapchain_{};
     bool framebuffer_resized_ = false;
