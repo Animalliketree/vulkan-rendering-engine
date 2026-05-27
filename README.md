@@ -1,4 +1,6 @@
 # vulkan-rendering-engine
+[![Static Badge][changelog-badge]][changelog]
+
 ## Summary
 A 3D Vulkan rendering engine that can render two rotating squares.
 ## Program Setup
@@ -24,3 +26,7 @@ There are currently no tests written for the program.
 ## Known Issues
 Low priority:
 - framerate randomly varies between program runs (e.g. 5-6k FPS one time, 7-8k the next)
+
+[changelog-badge]: https://img.shields.io/badge/version-v1.0.0-blue
+
+[changelog]: ./CHANGELOG.md
