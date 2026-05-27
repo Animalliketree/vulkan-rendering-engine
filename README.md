@@ -1,7 +1,13 @@
 # Vulkan Rendering Engine
-## Summary
 A 3D Vulkan rendering engine that can render two rotating squares.
-## Program Setup
+## Table of Contents
+- [Installation](#installation)
+  - [Using CMake](#using-cmake)
+- [Running the Program](#running-the-program)
+- [Testing the Program](#testing-the-program)
+- [Gallery](#gallery)
+- [Known Issues](#known-issues)
+## Installation
 The following libraries are required to run the program:
 - [OpenGL Mathematics](https://github.com/g-truc/glm)
 - [Quill](https://github.com/odygrd/quill)
