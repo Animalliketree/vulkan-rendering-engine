@@ -10,15 +10,14 @@ and project versioning follows [Semantic Versioning](https://semver.org/).
 
 - Rendering of voxels using rasterization
 - Ray tracing using Vulkan's ray tracing pipeline
-- Support for loading scenes
 - Moving the camera using WASD and the mouse
+- Command-line options for importing object scenes
 
 ### Changed
 
-- 
+- Loading vertices from inputted/imported data instead of built-in values
 
 ### Deprecated
 
 ### Removed
-
-### Fixed
+- Built-in vertices within the source code

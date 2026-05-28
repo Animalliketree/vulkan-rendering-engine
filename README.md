@@ -1,9 +1,16 @@
-# vulkan-rendering-engine
+# Vulkan Rendering Engine
 [![Static Badge][changelog-badge]][changelog]
+[![Static Badge][license-badge]][license]
 
-## Summary
 A 3D Vulkan rendering engine that can render two rotating squares.
-## Program Setup
+## Table of Contents
+- [Installation](#installation)
+  - [Using CMake](#using-cmake)
+- [Running the Program](#running-the-program)
+- [Testing the Program](#testing-the-program)
+- [Gallery](#gallery)
+- [Known Issues](#known-issues)
+## Installation
 The following libraries are required to run the program:
 - [OpenGL Mathematics](https://github.com/g-truc/glm)
 - [Quill](https://github.com/odygrd/quill)
@@ -27,6 +34,7 @@ There are currently no tests written for the program.
 Low priority:
 - framerate randomly varies between program runs (e.g. 5-6k FPS one time, 7-8k the next)
 
-[changelog-badge]: https://img.shields.io/badge/version-v1.0.0-blue
-
 [changelog]: ./CHANGELOG.md
+[changelog-badge]: https://img.shields.io/badge/version-v1.0.0-blue
+[license]: ./LICENSE
+[license-badge]: https://img.shields.io/badge/license-MIT-blue
