@@ -16,6 +16,12 @@
 #include "../graphics/vulkan_context.hpp"
 
 namespace graphics::vk_renderer {
+struct ShaderData {
+    alignas(16) glm::mat4 proj;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 model;
+};
+
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 normal;
