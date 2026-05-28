@@ -37,6 +37,7 @@ To run the program, simply go to the repository and run `./VoxelEngine`.
 The program is currently only usable by running it. If you want to add code to the program, see the contributions section.
 
 ## How to Contribute
+You can contribute with pull requests. If there's any part of the code that you can rewrite, then that works too. I will review every request by hand before adding it to the next version.
 
 ## Gallery
 ![A really impressive image of two loosely-stacked warm-coloured squares](./screenshots/VulkanEngine_1.png)
