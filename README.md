@@ -1,5 +1,5 @@
 # Vulkan Rendering Engine
-[![Static Badge][changelog-badge]][changelog]
+[![Static Badge][version-badge]][changelog]
 [![Static Badge][license-badge]][license]
 
 A 3D Vulkan rendering engine that can render two rotating squares.
@@ -33,3 +33,8 @@ There are currently no tests written for the program.
 ## Gallery
 ![A really impressive image of two loosely-stacked warm-coloured squares](./screenshots/VulkanEngine_1.png)
 ![A really impressive image of two loosely-stacked cool-coloured squares rotated a bit more than the previous image](./screenshots/VulkanEngine_2.png)
+
+[version-badge]: https://img.shields.io/badge/version-v1.0.0-blue
+[changelog]: ./CHANGELOG.md
+[license-badge]: https://img.shields.io/badge/license-MIT-blue
+[license]: ./LICENSE
