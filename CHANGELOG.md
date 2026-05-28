@@ -17,7 +17,5 @@ and project versioning follows [Semantic Versioning](https://semver.org/).
 
 - Loading vertices from inputted/imported data instead of built-in values
 
-### Deprecated
-
 ### Removed
 - Built-in vertices within the source code
