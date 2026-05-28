@@ -4,13 +4,14 @@
 
 A 3D Vulkan rendering engine that can render two rotating squares.
 ## Table of Contents
+- [Main Objective](#main-objective)
 - [Installation](#installation)
   - [Using CMake](#using-cmake)
 - [Running the Program](#running-the-program)
 - [Testing the Program](#testing-the-program)
 - [Gallery](#gallery)
 - [Known Issues](#known-issues)
-## The Main Objective
+## Main Objective
 The project is unfinished! Why do I call this project an engine? The main objective of this project is to develop a library that can be integrated with other modules in a game engine. This would include an audio system, particle system, etc. With this in mind, since the project currently runs on its own and will be one of the main pillars of the larger picture, it can be considered an engine.
 ## Installation
 The following libraries are required to run the program:
