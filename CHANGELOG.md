@@ -22,6 +22,6 @@ and project versioning follows [Semantic Versioning](https://semver.org/).
 ### Removed
 - Built-in vertices within the source code
 
-## v1.0.0 -- 2026-05-27
+## v1.0.0 - 2026-05-27
 ### Added
 - Everything
