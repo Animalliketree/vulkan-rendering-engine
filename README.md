@@ -20,9 +20,9 @@ The following libraries are required to run the program:
 
 ### Using CMake
 1. Download and extract the .zip file
-2. Open a terminal at the extracted folder directory
-3. Run `cmake CMakeLists.txt`
-4. Run `make`
+2. Open a terminal in the extracted folder directory
+3. Run `cmake CMakeLists.txt`.
+4. Run `make`.
 ## Running the Program
 To run the program, simply go to the repository and run `./VoxelEngine`.
 ## Testing the Program
@@ -35,6 +35,6 @@ Low priority:
 - framerate randomly varies between program runs (e.g. 5-6k FPS one time, 7-8k the next)
 
 [changelog]: ./CHANGELOG.md
-[changelog-badge]: https://img.shields.io/badge/version-v1.0.0-blue
+[changelog-badge]: https://img.shields.io/badge/version-v0.0.0-blue
 [license]: ./LICENSE
 [license-badge]: https://img.shields.io/badge/license-MIT-blue
