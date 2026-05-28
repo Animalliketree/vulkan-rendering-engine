@@ -39,6 +39,8 @@ The program is currently only usable by running it. If you want to add code to t
 ## How to Contribute
 You can contribute with pull requests. If there's any part of the code that you can rewrite, then that works too. I will review every request by hand before adding it to the next version.
 
+I (try to) follow [Google's C++ Style Guide](https://google.github.io/styleguide/cppguide.html).
+
 ## Gallery
 ![A really impressive image of two loosely-stacked warm-coloured squares](./screenshots/VulkanEngine_1.png)
 ![A really impressive image of two loosely-stacked cool-coloured squares rotated a bit more than the previous image](./screenshots/VulkanEngine_2.png)
