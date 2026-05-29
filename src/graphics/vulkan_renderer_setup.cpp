@@ -1,15 +1,19 @@
 #include <volk.h>
 
+#include <cassert>
+
 #include <algorithm>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "vulkan_renderer.hpp"
+#include "../../src/graphics/vulkan_renderer.hpp"
 
 namespace {
-constexpr char kProjectRoot[] =
-    "/home/arboivin/alix-baque/maison/projets/voxel-engine";
+constexpr uint32_t kWindowWidth = 800;
+constexpr uint32_t kWindowHeight = 600;
+constexpr char kProjectRoot[] = "/home/arboivin/alix-baque/maison/projets/voxel-engine";
 
 const char kShaderFile[] = "/appdata/graphics.spv";
 
@@ -27,9 +31,6 @@ std::vector<char> readFile(const std::string file_name) {
 
     return buffer;
 }
-
-constexpr uint32_t kWindowWidth = 800;
-constexpr uint32_t kWindowHeight = 600;
 
 VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR cap) noexcept {
     if (cap.currentExtent.width != UINT32_MAX)
@@ -68,6 +69,103 @@ noexcept {
 }  // namespace
 
 namespace graphics::vk_renderer {
+VkImageView VulkanRenderer::createImageView(const VkImage& img,
+                                            const VkFormat fmt,
+                                            const VkImageAspectFlags aspect)
+noexcept {
+    VkImageView view;
+
+    const VkImageViewCreateInfo info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .image = img,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = fmt,
+        .components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
+        },
+        .subresourceRange = {aspect, 0, 1, 0, 1}
+    };
+    vkCreateImageView(device_, &info, nullptr, &view);
+    return view;
+}
+
+void VulkanRenderer::createImageViews() noexcept {
+    for (VkImageView view : swapchain_.image_views)
+        vkDestroyImageView(device_, view, nullptr);
+    swapchain_.image_views.clear();
+
+    for (VkImage img : swapchain_.images) {
+        swapchain_.image_views.push_back(createImageView(img,
+                swapchain_.format.format, VK_IMAGE_ASPECT_COLOR_BIT));
+    }
+
+    assert(swapchain_.image_views.size() == swapchain_.images.size());
+}
+
+void VulkanRenderer::createSwapchain(VkSwapchainKHR old_swapchain) noexcept {
+    assert(surface_ != nullptr);
+
+    VkSurfaceCapabilitiesKHR caps;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &caps);
+    const uint32_t min_images = caps.maxImageCount > 0
+        ? std::min(caps.minImageCount + 1, caps.maxImageCount)
+        : caps.minImageCount + 1;
+
+    uint32_t num_fmts;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_fmts,
+                                         nullptr);
+    std::vector<VkSurfaceFormatKHR> fmts(num_fmts);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_fmts,
+                                         fmts.data());
+
+    uint32_t num_pms;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_,
+                                              &num_pms, nullptr);
+    std::vector<VkPresentModeKHR> pms(num_pms);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_,
+                                              &num_pms, pms.data());
+
+    const VkSurfaceFormatKHR format = chooseFromList(fmts);
+
+    const VkSwapchainCreateInfoKHR swapchain_info{
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .flags = 0,
+        .surface = surface_,
+        .minImageCount = min_images,
+        .imageFormat = format.format,
+        .imageColorSpace = format.colorSpace,
+        .imageExtent = chooseSwapExtent(caps),
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
+        .preTransform = caps.currentTransform,
+        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .presentMode = chooseFromList(pms),
+        .clipped = VK_TRUE,
+        .oldSwapchain = old_swapchain};
+
+    VkResult r = vkCreateSwapchainKHR(device_, &swapchain_info, nullptr,
+                                      &swapchain_.swapchain);
+    assert(r == VK_SUCCESS);
+
+    vkDestroySwapchainKHR(device_, old_swapchain, nullptr);
+
+    swapchain_.extent = swapchain_info.imageExtent;
+    swapchain_.format = format;
+
+    uint32_t num_imgs;
+    vkGetSwapchainImagesKHR(device_, swapchain_.swapchain, &num_imgs, nullptr);
+    swapchain_.images.resize(num_imgs);
+    vkGetSwapchainImagesKHR(device_, swapchain_.swapchain, &num_imgs,
+                            swapchain_.images.data());
+}
+
 void VulkanRenderer::createDescriptorPool() noexcept {
     const VkDescriptorPoolSize size{
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -82,8 +180,9 @@ void VulkanRenderer::createDescriptorPool() noexcept {
         .pPoolSizes = &size
     };
 
-    assert(vkCreateDescriptorPool(device_, &create_info, nullptr,
-                                  &descriptor_pool_) == VK_SUCCESS);
+    VkResult r = vkCreateDescriptorPool(device_, &create_info, nullptr,
+                                        &descriptor_pool_);
+    assert(r == VK_SUCCESS);
 }
 
 void VulkanRenderer::createDescriptorSetLayout() noexcept {
@@ -102,8 +201,9 @@ void VulkanRenderer::createDescriptorSetLayout() noexcept {
         .pBindings = &ubo_binding
     };
 
-    assert(vkCreateDescriptorSetLayout(device_, &create_info, nullptr,
-                                       &descriptor_set_layout_) == VK_SUCCESS);
+    VkResult r = vkCreateDescriptorSetLayout(device_, &create_info, nullptr,
+                                       &descriptor_set_layout_);
+    assert(r == VK_SUCCESS);
 }
 
 void VulkanRenderer::createDescriptorSets() noexcept {
@@ -121,8 +221,10 @@ void VulkanRenderer::createDescriptorSets() noexcept {
         .pSetLayouts = layouts.data()
     };
     descriptor_sets_.resize(kMaxFramesInFlight);
-    assert(vkAllocateDescriptorSets(device_, &alloc_info,
-                                    descriptor_sets_.data()) == VK_SUCCESS);
+    VkResult r = vkAllocateDescriptorSets(device_, &alloc_info,
+                                          descriptor_sets_.data());
+    assert(r == VK_SUCCESS);
+    if (r != VK_SUCCESS) abort();
 
     for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
         const VkDescriptorBufferInfo buf_info{
@@ -150,7 +252,8 @@ void VulkanRenderer::createDescriptorSets() noexcept {
 }
 
 VkShaderModule VulkanRenderer::createShaderModule(
-        const std::vector<char>& code) noexcept {
+    const std::vector<char>& code
+) noexcept {
     VkShaderModule mod;
 
     const VkShaderModuleCreateInfo module_info{
@@ -160,8 +263,8 @@ VkShaderModule VulkanRenderer::createShaderModule(
         .codeSize = code.size() * sizeof(char),
         .pCode = reinterpret_cast<const uint32_t*>(code.data())
     };
-    assert(vkCreateShaderModule(device_, &module_info, nullptr, &mod)
-        == VK_SUCCESS);
+    VkResult r = vkCreateShaderModule(device_, &module_info, nullptr, &mod);
+    assert(r == VK_SUCCESS);
     return mod;
 }
 
@@ -177,8 +280,9 @@ VkPipelineLayout VulkanRenderer::createGraphicsPipelineLayout() noexcept {
         .pushConstantRangeCount = 0,
         .pPushConstantRanges = nullptr
     };
-    assert(vkCreatePipelineLayout(device_, &layout_info, nullptr, &layout)
-        == VK_SUCCESS);
+    VkResult r = vkCreatePipelineLayout(device_, &layout_info, nullptr,
+                                        &layout);
+    assert(r == VK_SUCCESS);
     return layout;
 }
 
@@ -329,9 +433,9 @@ void VulkanRenderer::createGraphicsPipeline() noexcept {
         .basePipelineIndex = -1
     };
 
-    assert(vkCreateGraphicsPipelines(device_, nullptr, 1, &pipeline_info,
-                                     nullptr, &graphics_pipeline_.pipeline)
-        == VK_SUCCESS);
+    VkResult r = vkCreateGraphicsPipelines(device_, nullptr, 1, &pipeline_info,
+                                     nullptr, &graphics_pipeline_.pipeline);
+    assert(r == VK_SUCCESS);
 
     graphics_pipeline_.shader_module = shader_module;
 }
@@ -368,8 +472,8 @@ void VulkanRenderer::createCommandPool() noexcept {
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
         .queueFamilyIndex = graphics_qf_idx_
     };
-    assert(vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_)
-        == VK_SUCCESS);
+    VkResult r = vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_);
+    assert(r == VK_SUCCESS);
 }
 
 void VulkanRenderer::createDepthResources() noexcept {
@@ -407,8 +511,9 @@ void VulkanRenderer::createDepthResources() noexcept {
         .pQueueFamilyIndices = &queue_i,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
     };
-    assert(vkCreateImage(device_, &img_info, nullptr, &depth_image_.image)
-        == VK_SUCCESS);
+    VkResult r = vkCreateImage(device_, &img_info, nullptr,
+                               &depth_image_.image);
+    assert(r == VK_SUCCESS);
 
     VkMemoryRequirements mem_req;
     vkGetImageMemoryRequirements(device_, depth_image_.image, &mem_req);
@@ -422,10 +527,10 @@ void VulkanRenderer::createDepthResources() noexcept {
             | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
     };
 
-    assert(vkAllocateMemory(device_, &alloc_info, nullptr,
-                            &depth_image_.memory) == VK_SUCCESS);
-    assert(vkBindImageMemory(device_, depth_image_.image,
-                             depth_image_.memory, 0) == VK_SUCCESS);
+    r = vkAllocateMemory(device_, &alloc_info, nullptr, &depth_image_.memory);
+    assert(r == VK_SUCCESS);
+    r = vkBindImageMemory(device_, depth_image_.image, depth_image_.memory, 0);
+    assert(r == VK_SUCCESS);
     depth_image_.view = createImageView(depth_image_.image,
                                         depth_image_.format,
                                         VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -443,8 +548,9 @@ void VulkanRenderer::createCommandBuffers() noexcept {
         .commandBufferCount = static_cast<uint32_t>(command_buffers_.size())
     };
 
-    assert(vkAllocateCommandBuffers(device_, &alloc_info, command_buffers_.data())
-        == VK_SUCCESS);
+    VkResult r = vkAllocateCommandBuffers(device_, &alloc_info,
+                                          command_buffers_.data());
+    assert(r == VK_SUCCESS);
 }
 
 void VulkanRenderer::createSyncObjects() noexcept {
@@ -462,21 +568,23 @@ void VulkanRenderer::createSyncObjects() noexcept {
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
 
+    VkResult r;
+
     for (uint32_t i = 0; i < swapchain_.images.size(); i++) {
         VkSemaphore sem;
-        assert(vkCreateSemaphore(device_, &sem_info, nullptr, &sem)
-            == VK_SUCCESS);
+        r = vkCreateSemaphore(device_, &sem_info, nullptr, &sem);
+        assert(r == VK_SUCCESS);
         sem_render_done_.push_back(sem);
     }
 
     for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
         VkSemaphore sem;
         VkFence fence;
-        assert(vkCreateSemaphore(device_, &sem_info, nullptr, &sem)
-            == VK_SUCCESS);
+        r = vkCreateSemaphore(device_, &sem_info, nullptr, &sem);
+        assert(r == VK_SUCCESS);
         sem_present_done_.push_back(sem);
-        assert(vkCreateFence(device_, &fence_info, nullptr, &fence)
-            == VK_SUCCESS);
+        r = vkCreateFence(device_, &fence_info, nullptr, &fence);
+        assert(r == VK_SUCCESS);
         draw_fences_.push_back(fence);
     }
 
@@ -484,9 +592,11 @@ void VulkanRenderer::createSyncObjects() noexcept {
     assert(sem_present_done_.size() == kMaxFramesInFlight);
 }
 
-BufferHandle VulkanRenderer::createBuffer(const VkDeviceSize size,
-        const VkMemoryPropertyFlags props,
-        const VkBufferUsageFlags usage) noexcept {
+BufferHandle VulkanRenderer::createBuffer(
+    const VkDeviceSize size,
+    const VkMemoryPropertyFlags props,
+    const VkBufferUsageFlags usage
+) noexcept {
     BufferHandle buf;
     const VkBufferCreateInfo info{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -498,7 +608,8 @@ BufferHandle VulkanRenderer::createBuffer(const VkDeviceSize size,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr
     };
-    assert(vkCreateBuffer(device_, &info, nullptr, &buf.buffer) == VK_SUCCESS);
+    VkResult r = vkCreateBuffer(device_, &info, nullptr, &buf.buffer);
+    assert(r == VK_SUCCESS);
 
     VkMemoryRequirements mem_req;
     vkGetBufferMemoryRequirements(device_, buf.buffer, &mem_req);
@@ -509,107 +620,11 @@ BufferHandle VulkanRenderer::createBuffer(const VkDeviceSize size,
         .allocationSize = mem_req.size,
         .memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits, props)
     };
-    assert(vkAllocateMemory(device_, &alloc_info, nullptr, &buf.memory)
-        == VK_SUCCESS);
+    r = vkAllocateMemory(device_, &alloc_info, nullptr, &buf.memory);
+    assert(r == VK_SUCCESS);
 
-    assert(vkBindBufferMemory(device_, buf.buffer, buf.memory, buf.offset)
-        == VK_SUCCESS);
+    r = vkBindBufferMemory(device_, buf.buffer, buf.memory, buf.offset);
+    assert(r == VK_SUCCESS);
     return buf;
-}
-
-VkImageView VulkanRenderer::createImageView(const VkImage& img,
-                                            const VkFormat fmt,
-                                            const VkImageAspectFlags aspect)
-noexcept {
-    VkImageView view;
-
-    const VkImageViewCreateInfo info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .image = img,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
-        .format = fmt,
-        .components = {
-            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
-            VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
-        },
-        .subresourceRange = {aspect, 0, 1, 0, 1}
-    };
-    vkCreateImageView(device_, &info, nullptr, &view);
-    return view;
-}
-
-void VulkanRenderer::createImageViews() noexcept {
-    for (VkImageView view : swapchain_.image_views)
-        vkDestroyImageView(device_, view, nullptr);
-    swapchain_.image_views.clear();
-
-    for (VkImage img : swapchain_.images) {
-        swapchain_.image_views.push_back(createImageView(img,
-                swapchain_.format.format, VK_IMAGE_ASPECT_COLOR_BIT));
-    }
-
-    assert(swapchain_.image_views.size() == swapchain_.images.size());
-}
-
-void VulkanRenderer::createSwapchain(VkSwapchainKHR old_swapchain) noexcept {
-    assert(surface_ != nullptr);
-
-    VkSurfaceCapabilitiesKHR caps;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface_, &caps);
-    const uint32_t min_images = caps.maxImageCount > 0
-        ? std::min(caps.minImageCount + 1, caps.maxImageCount)
-        : caps.minImageCount + 1;
-
-    uint32_t num_fmts;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_fmts,
-                                         nullptr);
-    std::vector<VkSurfaceFormatKHR> fmts(num_fmts);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &num_fmts,
-                                         fmts.data());
-
-    uint32_t num_pms;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_,
-                                              &num_pms, nullptr);
-    std::vector<VkPresentModeKHR> pms(num_pms);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_,
-                                              &num_pms, pms.data());
-
-    const VkSurfaceFormatKHR format = chooseFromList(fmts);
-
-    const VkSwapchainCreateInfoKHR swapchain_info{
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .pNext = nullptr,
-        .flags = 0,
-        .surface = surface_,
-        .minImageCount = min_images,
-        .imageFormat = format.format,
-        .imageColorSpace = format.colorSpace,
-        .imageExtent = chooseSwapExtent(caps),
-        .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-        .preTransform = caps.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = chooseFromList(pms),
-        .clipped = VK_TRUE,
-        .oldSwapchain = old_swapchain};
-
-    assert(vkCreateSwapchainKHR(device_, &swapchain_info, nullptr,
-                         &swapchain_.swapchain) == VK_SUCCESS);
-
-    vkDestroySwapchainKHR(device_, old_swapchain, nullptr);
-
-    swapchain_.extent = swapchain_info.imageExtent;
-    swapchain_.format = format;
-
-    uint32_t num_imgs;
-    vkGetSwapchainImagesKHR(device_, swapchain_.swapchain, &num_imgs, nullptr);
-    swapchain_.images.resize(num_imgs);
-    vkGetSwapchainImagesKHR(device_, swapchain_.swapchain, &num_imgs,
-                            swapchain_.images.data());
 }
 }  // namespace graphics::vk_renderer

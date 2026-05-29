@@ -2,21 +2,22 @@
 
 #include "../../src/graphics/vulkan_renderer.hpp"
 
-#include <array>
+#include <quill/LogFunctions.h>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
-#include <quill/LogFunctions.h>
+#include <volk.h>
+
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <utility>
-#include <vector>
 
-#include <volk.h>
+#include <array>
+#include <memory>
+#include <vector>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/ext/matrix_clip_space.hpp>
@@ -30,14 +31,14 @@ using Vertex = graphics::vk_renderer::Vertex;
 
 const std::array<Vertex, 8> vertices = {Vertex
     {glm::vec3(-0.5f, -0.5f, -0.25f), glm::vec3(1.0f, 0.0f, 0.0f), {.0f, .0f}},
-    {glm::vec3(-0.5f,  0.5f, -0.25f), glm::vec3(0.0f, 1.0f, 0.0f), {.0f, .0f}},
-    {glm::vec3( 0.5f, -0.5f, -0.25f), glm::vec3(0.0f, 0.0f, 1.0f), {.0f, .0f}},
-    {glm::vec3( 0.5f,  0.5f, -0.25f), glm::vec3(1.0f, 1.0f, 1.0f), {.0f, .0f}},
+    {glm::vec3(-0.5f, 0.5f, -0.25f), glm::vec3(0.0f, 1.0f, 0.0f), {.0f, .0f}},
+    {glm::vec3(0.5f, -0.5f, -0.25f), glm::vec3(0.0f, 0.0f, 1.0f), {.0f, .0f}},
+    {glm::vec3(0.5f, 0.5f, -0.25f), glm::vec3(1.0f, 1.0f, 1.0f), {.0f, .0f}},
 
-    {glm::vec3{-0.5f, -0.5f,  0.25f}, glm::vec3{1.0f, 0.0f, 0.0f}, {.0f, .0f}},
-    {glm::vec3{-0.5f,  0.5f,  0.25f}, glm::vec3{0.0f, 1.0f, 0.0f}, {.0f, .0f}},
-    {glm::vec3{ 0.5f, -0.5f,  0.25f}, glm::vec3{0.0f, 0.0f, 1.0f}, {.0f, .0f}},
-    {glm::vec3{ 0.5f,  0.5f,  0.25f}, glm::vec3{1.0f, 1.0f, 1.0f}, {.0f, .0f}},
+    {glm::vec3{-0.5f, -0.5f, 0.25f}, glm::vec3{1.0f, 0.0f, 0.0f}, {.0f, .0f}},
+    {glm::vec3{-0.5f, 0.5f, 0.25f}, glm::vec3{0.0f, 1.0f, 0.0f}, {.0f, .0f}},
+    {glm::vec3{0.5f, -0.5f, 0.25f}, glm::vec3{0.0f, 0.0f, 1.0f}, {.0f, .0f}},
+    {glm::vec3{0.5f, 0.5f, 0.25f}, glm::vec3{1.0f, 1.0f, 1.0f}, {.0f, .0f}},
 };
 
 const std::array<uint16_t, 12> indices = {
@@ -73,10 +74,10 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
     createCommandBuffers();
     quill::info(log, "Loading vertex data...");
     loadDataOntoDevice(vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                     vertex_buffer_);
+                       std::make_unique<BufferHandle>(vertex_buffer_));
     quill::info(log, "Loading index data...");
     loadDataOntoDevice(indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                     index_buffer_);
+                       std::make_unique<BufferHandle>(index_buffer_));
     quill::info(log, "Creating uniform buffers...");
     createUniformBuffers();
     quill::info(log, "Creating descriptor pool...");
@@ -167,28 +168,32 @@ void VulkanRenderer::copyBuffer(const VkBuffer& src, const VkBuffer& dst,
         .pSignalSemaphores = nullptr
     };
 
-    assert(vkAllocateCommandBuffers(device_, &alloc_info, &cmd_buf)
-        == VK_SUCCESS);
+    VkResult r = vkAllocateCommandBuffers(device_, &alloc_info, &cmd_buf);
+    assert(r == VK_SUCCESS);
 
     quill::info(log, "Beginning command buffer recording...");
-    assert(vkBeginCommandBuffer(cmd_buf, &begin_info) == VK_SUCCESS);
+    r = vkBeginCommandBuffer(cmd_buf, &begin_info);
+    assert(r == VK_SUCCESS);
 
     quill::info(log, "Recording copy command...");
     vkCmdCopyBuffer(cmd_buf, src, dst, 1, &copy_info);
     vkEndCommandBuffer(cmd_buf);
 
     quill::info(log, "Submitting to graphics queue...");
-    assert(vkQueueSubmit(graphics_queue_, 1, &submit_info, nullptr)
-        == VK_SUCCESS);
+    r = vkQueueSubmit(graphics_queue_, 1, &submit_info, nullptr);
+    assert(r == VK_SUCCESS);
 
     quill::info(log, "Waiting for queue...");
-    assert(vkQueueWaitIdle(graphics_queue_) == VK_SUCCESS);
+    r = vkQueueWaitIdle(graphics_queue_);
+    assert(r == VK_SUCCESS);
 }
 
 template<typename T, size_t N>
-void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
-                                        const VkBufferUsageFlags usage,
-                                        BufferHandle& buf) noexcept {
+void VulkanRenderer::loadDataOntoDevice(
+    const std::array<T, N> data,
+    const VkBufferUsageFlags usage,
+    std::shared_ptr<BufferHandle> buf
+) noexcept {
     VkDeviceSize buffer_size = sizeof(data[0]) * data.size();
 
     quill::Logger* log = quill::simple_logger();
@@ -200,19 +205,20 @@ void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     quill::info(log, "Creating target buffer...");
-    buf = createBuffer(buffer_size,
+    *buf = createBuffer(buffer_size,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
     quill::info(log, "Moving data onto staging buffer...");
     void* mem;
-    assert(vkMapMemory(device_, staging_buf.memory, staging_buf.offset,
-                       buffer_size, 0, &mem) == VK_SUCCESS);
+    VkResult r = vkMapMemory(device_, staging_buf.memory, staging_buf.offset,
+                       buffer_size, 0, &mem);
+    assert(r == VK_SUCCESS);
     SDL_memcpy(mem, data.data(), buffer_size);
     vkUnmapMemory(device_, staging_buf.memory);
 
     quill::info(log, "Copying staging buffer onto target buffer...");
-    copyBuffer(staging_buf.buffer, buf.buffer, buffer_size);
+    copyBuffer(staging_buf.buffer, buf->buffer, buffer_size);
     vkDestroyBuffer(device_, staging_buf.buffer, nullptr);
     vkFreeMemory(device_, staging_buf.memory, nullptr);
 }
@@ -319,7 +325,8 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
     };
     const VkRect2D scissor = {VkOffset2D{0, 0}, swapchain_.extent};
 
-    assert(vkBeginCommandBuffer(cmd_buf, &begin_info) == VK_SUCCESS);
+    VkResult r = vkBeginCommandBuffer(cmd_buf, &begin_info);
+    assert(r == VK_SUCCESS);
 
     transitionImageLayout(swapchain_.images[img_i],
         VK_IMAGE_LAYOUT_UNDEFINED,
@@ -366,7 +373,8 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT);
 
-    assert(vkEndCommandBuffer(cmd_buf) == VK_SUCCESS);
+    r = vkEndCommandBuffer(cmd_buf);
+    assert(r == VK_SUCCESS);
 }
 
 using Time = std::chrono::system_clock::time_point;
@@ -399,20 +407,22 @@ bool VulkanRenderer::drawFrame() {
     assert(uniform_buffers_.size() == kMaxFramesInFlight);
 
     uint32_t img_i;
-    VkResult result;
+    VkResult r;
 
-    assert(vkWaitForFences(device_, 1, &draw_fences_[frame_i_],
-                           VK_TRUE, UINT64_MAX) == VK_SUCCESS);
-    assert(vkResetFences(device_, 1, &draw_fences_[frame_i_]) == VK_SUCCESS);
+    r = vkWaitForFences(device_, 1, &draw_fences_[frame_i_],
+                           VK_TRUE, UINT64_MAX);
+    assert(r == VK_SUCCESS);
+    r = vkResetFences(device_, 1, &draw_fences_[frame_i_]);
+    assert(r == VK_SUCCESS);
 
-    result = vkAcquireNextImageKHR(device_, swapchain_.swapchain, UINT64_MAX,
+    r = vkAcquireNextImageKHR(device_, swapchain_.swapchain, UINT64_MAX,
                                    sem_present_done_[frame_i_], nullptr,
                                    &img_i);
-    if ((result & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
+    if ((r & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
         recreateSwapchain();
         return false;
     }
-    assert(result == VK_SUCCESS);
+    assert(r == VK_SUCCESS);
 
     constexpr VkPipelineStageFlags wait_dst_stage =
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -438,18 +448,22 @@ bool VulkanRenderer::drawFrame() {
         .pResults = nullptr
     };
 
-    assert(vkResetCommandBuffer(command_buffers_[frame_i_], 0) == VK_SUCCESS);
+    r = vkResetCommandBuffer(command_buffers_[frame_i_], 0);
+    assert(r == VK_SUCCESS);
+
     updateUniformBuffer(img_i);
     recordCommandBuffer(img_i);
-    assert(vkQueueSubmit(graphics_queue_, 1, &submit_info,
-                         draw_fences_[frame_i_]) == VK_SUCCESS);
+    r = vkQueueSubmit(graphics_queue_, 1, &submit_info,
+                      draw_fences_[frame_i_]);
+    assert(r == VK_SUCCESS);
 
-    assert(vkQueuePresentKHR(graphics_queue_, &present_info) == VK_SUCCESS);
-    if ((result & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
+    r = vkQueuePresentKHR(graphics_queue_, &present_info);
+    assert(r == VK_SUCCESS);
+    if ((r & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
         recreateSwapchain();
         return false;
     }
-    assert(result == VK_SUCCESS);
+    assert(r == VK_SUCCESS);
 
     if (framebuffer_resized_) {
         framebuffer_resized_ = false;

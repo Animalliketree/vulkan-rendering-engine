@@ -30,4 +30,5 @@ target_compile_options(Graphics
         -Wconversion -Wunreachable-code
 
     PUBLIC
-        -std=c++20)
+        -std=c++20
+)

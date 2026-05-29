@@ -4,16 +4,19 @@
 #define SRC_GRAPHICS_VULKAN_RENDERER_HPP_
 
 #include <SDL3/SDL_video.h>
+#include <volk.h>
+
 #include <cstddef>
 #include <cstdint>
-#include <chrono>
-#include <glm/ext/vector_float3.hpp>
-#include <vector>
-#include <volk.h>
-#include <glm/glm.hpp>
-#include <vulkan/vulkan_core.h>
 
-#include "../graphics/vulkan_context.hpp"
+#include <chrono>
+#include <memory>
+#include <vector>
+
+#include <glm/ext/vector_float3.hpp>
+#include <glm/glm.hpp>
+
+#include "../../src/graphics/vulkan_context.hpp"
 
 namespace graphics::vk_renderer {
 struct ShaderData {
@@ -139,7 +142,7 @@ class VulkanRenderer : private graphics::vulkan::VulkanContext {
     void loadDataOntoDevice(
         const std::array<T, N> data,
         const VkBufferUsageFlags usage,
-        BufferHandle& dst) noexcept;
+        std::shared_ptr<BufferHandle> dst) noexcept;
 
     // Drawing Methods
     void transitionImageLayout(

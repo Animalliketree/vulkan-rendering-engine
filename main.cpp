@@ -1,11 +1,11 @@
 /* Copyright 2026 Alix Boivin */
 
 #include <SDL3/SDL_events.h>
-#include <chrono>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <quill/LogFunctions.h>
 
+#include <chrono>
 #include <exception>
 
 #include "src/app.hpp"

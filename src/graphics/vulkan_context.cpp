@@ -1,34 +1,21 @@
-#include "vulkan_context.hpp"
+#include "../../src/graphics/vulkan_context.hpp"
 
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <quill/LogFunctions.h>
 #include <volk.h>
 #include <SDL3/SDL_vulkan.h>
+
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 
+#include <vector>
 
 namespace {
-#ifdef NDEBUG
-const std::vector<char const*> kValidationLayers = {};
-#else
+#ifndef NDEBUG
 const std::vector<char const*> kValidationLayers = {
-"VK_LAYER_KHRONOS_validation"};
-#endif
-
-constexpr char kAppTitle[] = "Game";
-constexpr char kEngineTitle[] = "Hephaestus";
-
-const std::vector<const char*> kRequiredDeviceExtensions = {
-  VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-  VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-  VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
-  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-  VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-  VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-  VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+    "VK_LAYER_KHRONOS_validation"
 };
 
 bool validationLayersSupported() {
@@ -56,6 +43,20 @@ bool validationLayersSupported() {
 
     return true;
 }
+#endif
+
+constexpr char kAppTitle[] = "Game";
+constexpr char kEngineTitle[] = "Hephaestus";
+
+const std::vector<const char*> kRequiredDeviceExtensions = {
+  VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+  VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+  VK_KHR_SHADER_DRAW_PARAMETERS_EXTENSION_NAME,
+  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+  VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+  VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+  VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+};
 
 std::vector<const char*> getInstanceExtensions() {
     uint32_t num_instance_extensions;
@@ -76,9 +77,9 @@ std::vector<const char*> getInstanceExtensions() {
         ext_vec.push_back(extensions[i]);
     }
 
-    #ifndef NDEBUG
+#ifndef NDEBUG
     ext_vec.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
-    #endif
+#endif
 
     SDL_free(extensions);
     return ext_vec;
@@ -95,13 +96,14 @@ bool evaluatePhysicalDeviceProperties(VkPhysicalDevice device) {
 
 bool evaluateDeviceExtensions(VkPhysicalDevice device) {
     assert(device != nullptr);
+    VkResult r;
 
-    uint32_t num_ext;
-    assert(vkEnumerateDeviceExtensionProperties(device, nullptr, &num_ext, nullptr)
-        == VK_SUCCESS);
+    uint32_t num_ext = 0;
+    r = vkEnumerateDeviceExtensionProperties(device, nullptr, &num_ext, nullptr);
+    assert(r == VK_SUCCESS);
     std::vector<VkExtensionProperties> extensions(num_ext);
-    assert(vkEnumerateDeviceExtensionProperties(device, nullptr, &num_ext, extensions.data())
-        == VK_SUCCESS);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &num_ext, extensions.data());
+    assert(r == VK_SUCCESS);
 
     for (const char* extension : kRequiredDeviceExtensions) {
         bool available = false;
@@ -127,6 +129,8 @@ bool evaluatePhysicalDeviceFeatures(VkPhysicalDevice device) {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
         .pNext = nullptr,
         .rayTracingPipeline = VK_TRUE,
+        .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
+        .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
         .rayTracingPipelineTraceRaysIndirect = VK_TRUE,
         .rayTraversalPrimitiveCulling = VK_FALSE};
 
@@ -138,12 +142,28 @@ bool evaluatePhysicalDeviceFeatures(VkPhysicalDevice device) {
     VkPhysicalDeviceVulkan13Features vk_1_3_features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
         .pNext = &dynamic_state_features,
-        .synchronization2 = VK_TRUE};
+        .robustImageAccess = VK_FALSE,
+        .inlineUniformBlock = VK_FALSE,
+        .descriptorBindingInlineUniformBlockUpdateAfterBind = VK_FALSE,
+        .pipelineCreationCacheControl = VK_FALSE,
+        .privateData = VK_FALSE,
+        .shaderDemoteToHelperInvocation = VK_FALSE,
+        .shaderTerminateInvocation = VK_FALSE,
+        .subgroupSizeControl = VK_FALSE,
+        .computeFullSubgroups = VK_FALSE,
+        .synchronization2 = VK_TRUE,
+        .textureCompressionASTC_HDR = VK_FALSE,
+        .shaderZeroInitializeWorkgroupMemory = VK_FALSE,
+        .dynamicRendering = VK_FALSE,
+        .shaderIntegerDotProduct = VK_FALSE,
+        .maintenance4 = VK_FALSE
+    };
 
     VkPhysicalDeviceFeatures2 features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
         .pNext = &vk_1_3_features,
-        .features = {}};
+        .features = {}
+    };
     vkGetPhysicalDeviceFeatures2(device, &features);
 
     return !(dynamic_state_features.extendedDynamicState == VK_FALSE
@@ -155,11 +175,14 @@ bool evaluatePhysicalDeviceFeatures(VkPhysicalDevice device) {
 
 namespace graphics::vulkan {
 VulkanContext::VulkanContext() noexcept {
-    assert(volkInitialize() == VK_SUCCESS);
+    VkResult r = volkInitialize();
+    if (r != VK_SUCCESS) abort();
+
     quill::Logger* log = quill::simple_logger();
 
     quill::info(log, "Creating instance...");
     createInstance();
+    quill::info(log, "Loading Volk...");
     volkLoadInstance(instance_);
     quill::info(log, "Selecting physical device...");
     selectPhysicalDevice();
@@ -175,15 +198,9 @@ VulkanContext::~VulkanContext() noexcept {
     vkDestroyInstance(instance_, nullptr);
 }
 
+// Issue with NDEBUG: Core dumps from vkCreateInstance but not caused here.
 void VulkanContext::createInstance() noexcept {
-    quill::Logger* log = quill::simple_logger();
-    bool layers_supported = validationLayersSupported();
-
-    // Handle extensions
-    quill::info(log, "Getting instance extensions...");
-    auto extensions = getInstanceExtensions();
-
-    VkApplicationInfo app_info{
+    const VkApplicationInfo app_info{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,
         .pApplicationName = kAppTitle,
@@ -192,6 +209,13 @@ void VulkanContext::createInstance() noexcept {
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
         .apiVersion = VK_API_VERSION_1_4
     };
+
+    VkResult r;
+    quill::Logger* log = quill::simple_logger();
+
+    // Handle extensions
+    quill::info(log, "Getting instance extensions...");
+    std::vector<const char*> extensions = getInstanceExtensions();
 
     VkInstanceCreateInfo instance_info{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -204,26 +228,30 @@ void VulkanContext::createInstance() noexcept {
         .ppEnabledExtensionNames = extensions.data()
     };
 
-    if (layers_supported) {
+#ifndef NDEBUG
+    if (validationLayersSupported()) {
         instance_info.enabledLayerCount =
             static_cast<uint32_t>(kValidationLayers.size());
         instance_info.ppEnabledLayerNames = kValidationLayers.data();
     }
+#endif
 
     quill::info(log, "Creating instance...");
-    assert(vkCreateInstance(&instance_info, nullptr, &instance_)
-        == VK_SUCCESS);
+    r = vkCreateInstance(&instance_info, nullptr, &instance_);
+    if (r != VK_SUCCESS) abort();
 }
 
 void VulkanContext::selectPhysicalDevice() noexcept {
     assert(instance_ != nullptr);
 
+    VkResult r;
     uint32_t num_devices = 0;
-    assert(vkEnumeratePhysicalDevices(instance_, &num_devices, nullptr)
-        == VK_SUCCESS);
+    r = vkEnumeratePhysicalDevices(instance_, &num_devices, nullptr);
+    assert(r == VK_SUCCESS);
+    if (num_devices < 1) abort();
     std::vector<VkPhysicalDevice> devices(num_devices);
-    assert(vkEnumeratePhysicalDevices(instance_, &num_devices, devices.data())
-        == VK_SUCCESS);
+    r = vkEnumeratePhysicalDevices(instance_, &num_devices, devices.data());
+    assert(r == VK_SUCCESS);
 
     bool device_found = false;
     for (VkPhysicalDevice device : devices) {
@@ -241,6 +269,7 @@ void VulkanContext::selectPhysicalDevice() noexcept {
     }
 
     assert(device_found);
+    if (!device_found) abort();
 }
 
 void VulkanContext::createLogicalDevice() noexcept {
@@ -292,7 +321,8 @@ void VulkanContext::createLogicalDevice() noexcept {
     };
     VkPhysicalDeviceFeatures2 features_2{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-        .pNext = &vk_1_3_features
+        .pNext = &vk_1_3_features,
+        .features = {}
     };
     const VkDeviceCreateInfo device_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -364,4 +394,4 @@ uint32_t VulkanContext::findMemoryType(
 
     std::abort();
 }
-}  // namespace graphics::vulkan::device
+}  // namespace graphics::vulkan
