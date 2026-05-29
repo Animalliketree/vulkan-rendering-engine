@@ -2,21 +2,21 @@
 
 #include "../../src/graphics/vulkan_renderer.hpp"
 
-#include <array>
+#include <quill/LogFunctions.h>
 #include <quill/Logger.h>
 #include <quill/SimpleSetup.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
-#include <quill/LogFunctions.h>
+#include <volk.h>
+
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <utility>
-#include <vector>
 
-#include <volk.h>
+#include <array>
+#include <vector>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/ext/matrix_clip_space.hpp>
@@ -27,22 +27,17 @@
 namespace {
 using Vertex = graphics::vk_renderer::Vertex;
 
-struct ShaderData {
-    alignas(16) glm::mat4 proj;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 model;
-};
 
 const std::array<Vertex, 8> vertices = {Vertex
     {glm::vec3(-0.5f, -0.5f, -0.25f), glm::vec3(1.0f, 0.0f, 0.0f), {.0f, .0f}},
-    {glm::vec3(-0.5f,  0.5f, -0.25f), glm::vec3(0.0f, 1.0f, 0.0f), {.0f, .0f}},
-    {glm::vec3( 0.5f, -0.5f, -0.25f), glm::vec3(0.0f, 0.0f, 1.0f), {.0f, .0f}},
-    {glm::vec3( 0.5f,  0.5f, -0.25f), glm::vec3(1.0f, 1.0f, 1.0f), {.0f, .0f}},
+    {glm::vec3(-0.5f, 0.5f, -0.25f), glm::vec3(0.0f, 1.0f, 0.0f), {.0f, .0f}},
+    {glm::vec3(0.5f, -0.5f, -0.25f), glm::vec3(0.0f, 0.0f, 1.0f), {.0f, .0f}},
+    {glm::vec3(0.5f, 0.5f, -0.25f), glm::vec3(1.0f, 1.0f, 1.0f), {.0f, .0f}},
 
-    {glm::vec3{-0.5f, -0.5f,  0.25f}, glm::vec3{1.0f, 0.0f, 0.0f}, {.0f, .0f}},
-    {glm::vec3{-0.5f,  0.5f,  0.25f}, glm::vec3{0.0f, 1.0f, 0.0f}, {.0f, .0f}},
-    {glm::vec3{ 0.5f, -0.5f,  0.25f}, glm::vec3{0.0f, 0.0f, 1.0f}, {.0f, .0f}},
-    {glm::vec3{ 0.5f,  0.5f,  0.25f}, glm::vec3{1.0f, 1.0f, 1.0f}, {.0f, .0f}},
+    {glm::vec3{-0.5f, -0.5f, 0.25f}, glm::vec3{1.0f, 0.0f, 0.0f}, {.0f, .0f}},
+    {glm::vec3{-0.5f, 0.5f, 0.25f}, glm::vec3{0.0f, 1.0f, 0.0f}, {.0f, .0f}},
+    {glm::vec3{0.5f, -0.5f, 0.25f}, glm::vec3{0.0f, 0.0f, 1.0f}, {.0f, .0f}},
+    {glm::vec3{0.5f, 0.5f, 0.25f}, glm::vec3{1.0f, 1.0f, 1.0f}, {.0f, .0f}},
 };
 
 const std::array<uint16_t, 12> indices = {
@@ -78,10 +73,10 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
     createCommandBuffers();
     quill::info(log, "Loading vertex data...");
     loadDataOntoDevice(vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                     vertex_buffer_);
+                       vertex_buffer_);
     quill::info(log, "Loading index data...");
     loadDataOntoDevice(indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                     index_buffer_);
+                       index_buffer_);
     quill::info(log, "Creating uniform buffers...");
     createUniformBuffers();
     quill::info(log, "Creating descriptor pool...");
@@ -137,39 +132,6 @@ VulkanRenderer::~VulkanRenderer() noexcept {
     SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
 }
 
-BufferHandle VulkanRenderer::createBuffer(const VkDeviceSize size,
-        const VkMemoryPropertyFlags props,
-        const VkBufferUsageFlags usage) noexcept {
-    BufferHandle buf;
-    const VkBufferCreateInfo info{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .size = size,
-        .usage = usage,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr
-    };
-    assert(vkCreateBuffer(device_, &info, nullptr, &buf.buffer) == VK_SUCCESS);
-
-    VkMemoryRequirements mem_req;
-    vkGetBufferMemoryRequirements(device_, buf.buffer, &mem_req);
-
-    const VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = mem_req.size,
-        .memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits, props)
-    };
-    assert(vkAllocateMemory(device_, &alloc_info, nullptr, &buf.memory)
-        == VK_SUCCESS);
-
-    assert(vkBindBufferMemory(device_, buf.buffer, buf.memory, buf.offset)
-        == VK_SUCCESS);
-    return buf;
-}
-
 void VulkanRenderer::copyBuffer(const VkBuffer& src, const VkBuffer& dst,
                                 const VkDeviceSize buffer_size) noexcept {
     assert(buffer_size > 0);
@@ -205,28 +167,32 @@ void VulkanRenderer::copyBuffer(const VkBuffer& src, const VkBuffer& dst,
         .pSignalSemaphores = nullptr
     };
 
-    assert(vkAllocateCommandBuffers(device_, &alloc_info, &cmd_buf)
-        == VK_SUCCESS);
+    VkResult r = vkAllocateCommandBuffers(device_, &alloc_info, &cmd_buf);
+    assert(r == VK_SUCCESS);
 
     quill::info(log, "Beginning command buffer recording...");
-    assert(vkBeginCommandBuffer(cmd_buf, &begin_info) == VK_SUCCESS);
+    r = vkBeginCommandBuffer(cmd_buf, &begin_info);
+    assert(r == VK_SUCCESS);
 
     quill::info(log, "Recording copy command...");
     vkCmdCopyBuffer(cmd_buf, src, dst, 1, &copy_info);
     vkEndCommandBuffer(cmd_buf);
 
     quill::info(log, "Submitting to graphics queue...");
-    assert(vkQueueSubmit(graphics_queue_, 1, &submit_info, nullptr)
-        == VK_SUCCESS);
+    r = vkQueueSubmit(graphics_queue_, 1, &submit_info, nullptr);
+    assert(r == VK_SUCCESS);
 
     quill::info(log, "Waiting for queue...");
-    assert(vkQueueWaitIdle(graphics_queue_) == VK_SUCCESS);
+    r = vkQueueWaitIdle(graphics_queue_);
+    assert(r == VK_SUCCESS);
 }
 
 template<typename T, size_t N>
-void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
-                                        const VkBufferUsageFlags usage,
-                                        BufferHandle& buf) noexcept {
+void VulkanRenderer::loadDataOntoDevice(
+    const std::array<T, N> data,
+    const VkBufferUsageFlags usage,
+    BufferHandle& buf
+) noexcept {
     VkDeviceSize buffer_size = sizeof(data[0]) * data.size();
 
     quill::Logger* log = quill::simple_logger();
@@ -244,8 +210,9 @@ void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
 
     quill::info(log, "Moving data onto staging buffer...");
     void* mem;
-    assert(vkMapMemory(device_, staging_buf.memory, staging_buf.offset,
-                       buffer_size, 0, &mem) == VK_SUCCESS);
+    VkResult r = vkMapMemory(device_, staging_buf.memory, staging_buf.offset,
+                       buffer_size, 0, &mem);
+    assert(r == VK_SUCCESS);
     SDL_memcpy(mem, data.data(), buffer_size);
     vkUnmapMemory(device_, staging_buf.memory);
 
@@ -255,115 +222,11 @@ void VulkanRenderer::loadDataOntoDevice(const std::array<T, N> data,
     vkFreeMemory(device_, staging_buf.memory, nullptr);
 }
 
-void VulkanRenderer::createUniformBuffers() noexcept {
-    if (!uniform_buffers_.empty()) {
-        for (BufferHandle buf : uniform_buffers_) {
-            vkDestroyBuffer(device_, buf.buffer, nullptr);
-            vkUnmapMemory(device_, buf.memory);
-            vkFreeMemory(device_, buf.memory, nullptr);
-        }
-        uniform_buffers_.clear();
-        uniform_buffer_maps_.clear();
-    }
-
-    for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
-        VkDeviceSize buf_size = sizeof(ShaderData);
-        BufferHandle buf = createBuffer(buf_size,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-        uniform_buffers_.emplace_back(std::move(buf));
-        void* data;
-        vkMapMemory(device_, uniform_buffers_[i].memory,
-                    uniform_buffers_[i].offset, buf_size, 0, &data);
-        uniform_buffer_maps_.emplace_back(std::move(data));
-    }
-}
-
-void VulkanRenderer::createCommandPool() noexcept {
-    const VkCommandPoolCreateInfo pool_info{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = graphics_qf_idx_
-    };
-    assert(vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_)
-        == VK_SUCCESS);
-}
-
-void VulkanRenderer::createDepthResources() noexcept {
-    const std::vector<VkFormat> candidates = {
-        VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT,
-        VK_FORMAT_D24_UNORM_S8_UINT
-    };
-
-    const uint32_t queue_i = graphics_qf_idx_;
-
-    if (depth_image_.image != nullptr) {
-        vkDestroyImageView(device_, depth_image_.view, nullptr);
-        vkFreeMemory(device_, depth_image_.memory, nullptr);
-        vkDestroyImage(device_, depth_image_.image, nullptr);
-    }
-
-    depth_image_.format = findDesiredFormat(candidates,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-
-    const VkImageCreateInfo img_info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = depth_image_.format,
-        .extent = {swapchain_.extent.width, swapchain_.extent.height, 1},
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 1,
-        .pQueueFamilyIndices = &queue_i,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-    assert(vkCreateImage(device_, &img_info, nullptr, &depth_image_.image)
-        == VK_SUCCESS);
-
-    VkMemoryRequirements mem_req;
-    vkGetImageMemoryRequirements(device_, depth_image_.image, &mem_req);
-
-    const VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = mem_req.size,
-        .memoryTypeIndex = findMemoryType(mem_req.memoryTypeBits,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
-    };
-
-    assert(vkAllocateMemory(device_, &alloc_info, nullptr,
-                            &depth_image_.memory) == VK_SUCCESS);
-    assert(vkBindImageMemory(device_, depth_image_.image,
-                             depth_image_.memory, 0) == VK_SUCCESS);
-    depth_image_.view = createImageView(depth_image_.image,
-                                        depth_image_.format,
-                                        VK_IMAGE_ASPECT_DEPTH_BIT);
-}
-
-void VulkanRenderer::createCommandBuffers() noexcept {
-    assert(command_buffers_.empty());
-
-    command_buffers_.resize(kMaxFramesInFlight);
-    const VkCommandBufferAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .commandPool = command_pool_,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = static_cast<uint32_t>(command_buffers_.size())
-    };
-
-    assert(vkAllocateCommandBuffers(device_, &alloc_info, command_buffers_.data())
-        == VK_SUCCESS);
+void VulkanRenderer::recreateSwapchain() noexcept {
+    vkDeviceWaitIdle(device_);
+    createSwapchain(swapchain_.swapchain);
+    createImageViews();
+    createDepthResources();
 }
 
 void VulkanRenderer::transitionImageLayout(const VkImage& img,
@@ -461,7 +324,8 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
     };
     const VkRect2D scissor = {VkOffset2D{0, 0}, swapchain_.extent};
 
-    assert(vkBeginCommandBuffer(cmd_buf, &begin_info) == VK_SUCCESS);
+    VkResult r = vkBeginCommandBuffer(cmd_buf, &begin_info);
+    assert(r == VK_SUCCESS);
 
     transitionImageLayout(swapchain_.images[img_i],
         VK_IMAGE_LAYOUT_UNDEFINED,
@@ -508,44 +372,8 @@ void VulkanRenderer::recordCommandBuffer(uint32_t img_i) {
         VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
         VK_IMAGE_ASPECT_COLOR_BIT);
 
-    assert(vkEndCommandBuffer(cmd_buf) == VK_SUCCESS);
-}
-
-void VulkanRenderer::createSyncObjects() noexcept {
-    assert(sem_present_done_.empty()
-           && sem_render_done_.empty() && draw_fences_.empty());
-
-    constexpr VkSemaphoreCreateInfo sem_info{
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0
-    };
-    constexpr VkFenceCreateInfo fence_info{
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = VK_FENCE_CREATE_SIGNALED_BIT
-    };
-
-    for (uint32_t i = 0; i < swapchain_.images.size(); i++) {
-        VkSemaphore sem;
-        assert(vkCreateSemaphore(device_, &sem_info, nullptr, &sem)
-            == VK_SUCCESS);
-        sem_render_done_.push_back(sem);
-    }
-
-    for (uint32_t i = 0; i < kMaxFramesInFlight; i++) {
-        VkSemaphore sem;
-        VkFence fence;
-        assert(vkCreateSemaphore(device_, &sem_info, nullptr, &sem)
-            == VK_SUCCESS);
-        sem_present_done_.push_back(sem);
-        assert(vkCreateFence(device_, &fence_info, nullptr, &fence)
-            == VK_SUCCESS);
-        draw_fences_.push_back(fence);
-    }
-
-    assert(sem_render_done_.size() == swapchain_.images.size());
-    assert(sem_present_done_.size() == kMaxFramesInFlight);
+    r = vkEndCommandBuffer(cmd_buf);
+    assert(r == VK_SUCCESS);
 }
 
 using Time = std::chrono::system_clock::time_point;
@@ -578,20 +406,22 @@ bool VulkanRenderer::drawFrame() {
     assert(uniform_buffers_.size() == kMaxFramesInFlight);
 
     uint32_t img_i;
-    VkResult result;
+    VkResult r;
 
-    assert(vkWaitForFences(device_, 1, &draw_fences_[frame_i_],
-                           VK_TRUE, UINT64_MAX) == VK_SUCCESS);
-    assert(vkResetFences(device_, 1, &draw_fences_[frame_i_]) == VK_SUCCESS);
+    r = vkWaitForFences(device_, 1, &draw_fences_[frame_i_],
+                           VK_TRUE, UINT64_MAX);
+    assert(r == VK_SUCCESS);
+    r = vkResetFences(device_, 1, &draw_fences_[frame_i_]);
+    assert(r == VK_SUCCESS);
 
-    result = vkAcquireNextImageKHR(device_, swapchain_.swapchain, UINT64_MAX,
+    r = vkAcquireNextImageKHR(device_, swapchain_.swapchain, UINT64_MAX,
                                    sem_present_done_[frame_i_], nullptr,
                                    &img_i);
-    if ((result & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
+    if ((r & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
         recreateSwapchain();
         return false;
     }
-    assert(result == VK_SUCCESS);
+    assert(r == VK_SUCCESS);
 
     constexpr VkPipelineStageFlags wait_dst_stage =
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -617,18 +447,22 @@ bool VulkanRenderer::drawFrame() {
         .pResults = nullptr
     };
 
-    assert(vkResetCommandBuffer(command_buffers_[frame_i_], 0) == VK_SUCCESS);
+    r = vkResetCommandBuffer(command_buffers_[frame_i_], 0);
+    assert(r == VK_SUCCESS);
+
     updateUniformBuffer(img_i);
     recordCommandBuffer(img_i);
-    assert(vkQueueSubmit(graphics_queue_, 1, &submit_info,
-                         draw_fences_[frame_i_]) == VK_SUCCESS);
+    r = vkQueueSubmit(graphics_queue_, 1, &submit_info,
+                      draw_fences_[frame_i_]);
+    assert(r == VK_SUCCESS);
 
-    assert(vkQueuePresentKHR(graphics_queue_, &present_info) == VK_SUCCESS);
-    if ((result & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
+    r = vkQueuePresentKHR(graphics_queue_, &present_info);
+    assert(r == VK_SUCCESS);
+    if ((r & (VK_ERROR_OUT_OF_DATE_KHR | VK_SUBOPTIMAL_KHR)) != 0) {
         recreateSwapchain();
         return false;
     }
-    assert(result == VK_SUCCESS);
+    assert(r == VK_SUCCESS);
 
     if (framebuffer_resized_) {
         framebuffer_resized_ = false;

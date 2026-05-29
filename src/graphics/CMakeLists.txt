@@ -5,9 +5,7 @@ add_library(Graphics)
 target_sources(Graphics
     PRIVATE
         vulkan_context.cpp
-        vk_renderer_swap.cpp
-        vk_renderer_desc_set.cpp
-        vk_renderer_graphics_pipe.cpp
+        vulkan_renderer_setup.cpp
         vulkan_renderer.cpp
 
     PUBLIC
@@ -32,4 +30,5 @@ target_compile_options(Graphics
         -Wconversion -Wunreachable-code
 
     PUBLIC
-        -std=c++20)
+        -std=c++20
+)

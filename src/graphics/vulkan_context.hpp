@@ -1,9 +1,12 @@
-#ifndef SRC_GRAPHICS_VULKAN_DEVICE_HPP_
-#define SRC_GRAPHICS_VULKAN_DEVICE_HPP_
+#ifndef SRC_GRAPHICS_VULKAN_CONTEXT_HPP_
+#define SRC_GRAPHICS_VULKAN_CONTEXT_HPP_
 
 #include <volk.h>
-#include <vector>
+
 #include <cstdint>
+
+#include <vector>
+
 namespace graphics::vulkan {
 class VulkanContext {
  public:
@@ -35,6 +38,6 @@ class VulkanContext {
     VkDevice device_ = nullptr;
     VkQueue graphics_queue_ = nullptr;
 };
-}  // namespace graphics::vulkan::device
+}  // namespace graphics::vulkan
 
-#endif  // SRC_GRAPHICS_VULKAN_DEVICE_HPP_
+#endif  // SRC_GRAPHICS_VULKAN_CONTEXT_HPP_
