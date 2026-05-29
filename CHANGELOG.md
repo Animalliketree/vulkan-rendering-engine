@@ -20,6 +20,10 @@ and project versioning follows [Semantic Versioning](https://semver.org/).
 ### Removed
 - Built-in vertices within the source code
 
+## v0.0.1 - 2026-05-29
+### Fixed
+- NDEBUG broke the program
+
 ## v0.0.0 - 2026-05-27
 ### Added
 - Everything
