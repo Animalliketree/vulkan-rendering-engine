@@ -45,7 +45,7 @@ I (try to) follow [Google's C++ Style Guide](https://google.github.io/styleguide
 ![A really impressive image of two loosely-stacked warm-coloured squares](./screenshots/VulkanEngine_1.png)
 ![A really impressive image of two loosely-stacked cool-coloured squares rotated a bit more than the previous image](./screenshots/VulkanEngine_2.png)
 
-[version-badge]: https://img.shields.io/badge/version-v1.0.1-blue
+[version-badge]: https://img.shields.io/badge/version-v0.0.1-blue
 [changelog]: ./CHANGELOG.md
 [license-badge]: https://img.shields.io/badge/license-MIT-blue
 [license]: ./LICENSE
