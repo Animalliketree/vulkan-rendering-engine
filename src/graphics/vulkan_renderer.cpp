@@ -16,7 +16,6 @@
 #include <cstdint>
 
 #include <array>
-#include <memory>
 #include <vector>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -74,10 +73,10 @@ VulkanRenderer::VulkanRenderer(SDL_Window* window) noexcept {
     createCommandBuffers();
     quill::info(log, "Loading vertex data...");
     loadDataOntoDevice(vertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                       std::make_unique<BufferHandle>(vertex_buffer_));
+                       vertex_buffer_);
     quill::info(log, "Loading index data...");
     loadDataOntoDevice(indices, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                       std::make_unique<BufferHandle>(index_buffer_));
+                       index_buffer_);
     quill::info(log, "Creating uniform buffers...");
     createUniformBuffers();
     quill::info(log, "Creating descriptor pool...");
@@ -192,7 +191,7 @@ template<typename T, size_t N>
 void VulkanRenderer::loadDataOntoDevice(
     const std::array<T, N> data,
     const VkBufferUsageFlags usage,
-    std::shared_ptr<BufferHandle> buf
+    BufferHandle& buf
 ) noexcept {
     VkDeviceSize buffer_size = sizeof(data[0]) * data.size();
 
@@ -205,7 +204,7 @@ void VulkanRenderer::loadDataOntoDevice(
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 
     quill::info(log, "Creating target buffer...");
-    *buf = createBuffer(buffer_size,
+    buf = createBuffer(buffer_size,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
@@ -218,7 +217,7 @@ void VulkanRenderer::loadDataOntoDevice(
     vkUnmapMemory(device_, staging_buf.memory);
 
     quill::info(log, "Copying staging buffer onto target buffer...");
-    copyBuffer(staging_buf.buffer, buf->buffer, buffer_size);
+    copyBuffer(staging_buf.buffer, buf.buffer, buffer_size);
     vkDestroyBuffer(device_, staging_buf.buffer, nullptr);
     vkFreeMemory(device_, staging_buf.memory, nullptr);
 }

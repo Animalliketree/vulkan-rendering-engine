@@ -10,7 +10,6 @@
 #include <cstdint>
 
 #include <chrono>
-#include <memory>
 #include <vector>
 
 #include <glm/ext/vector_float3.hpp>
@@ -142,7 +141,7 @@ class VulkanRenderer : private graphics::vulkan::VulkanContext {
     void loadDataOntoDevice(
         const std::array<T, N> data,
         const VkBufferUsageFlags usage,
-        std::shared_ptr<BufferHandle> dst) noexcept;
+        BufferHandle& dst) noexcept;
 
     // Drawing Methods
     void transitionImageLayout(
